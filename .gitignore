@@ -1,0 +1,29 @@
+# Move build artifacts
+build/*
+traces/*
+.trace
+.coverage*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Temporary files
+*.tmp
+tmp/
+temp/
