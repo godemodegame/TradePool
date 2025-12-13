@@ -1,20 +1,20 @@
 /// TradePool - Liquidity pools with Momentum DEX integration
 ///
-/// This module provides liquidity pools that integrate with Momentum DEX for token swaps.
+/// This module provides liquidity pools that integrate with Momentum DEX CLMM.
 /// Supports any SUI/TOKEN pair with generic types.
 ///
 /// # Features:
 /// - Generic pool creation for any SUI/TOKEN pair
-/// - Dual-token liquidity provision
-/// - Momentum DEX integration for swaps
-/// - Slippage protection on all trades
+/// - SUI-only liquidity deposits
+/// - Momentum DEX CLMM position management
+/// - Concentrated liquidity in custom price ranges
 /// - Non-fungible LP receipts with merge/split functionality
 ///
 /// # Usage:
 /// 1. Admin creates pool with Momentum pool reference
-/// 2. Users deposit SUI and TOKEN to provide liquidity
-/// 3. Admin executes swaps via Momentum DEX
-/// 4. Users withdraw proportional liquidity
+/// 2. Users deposit SUI to provide liquidity
+/// 3. Admin manages Momentum DEX positions (add/remove liquidity in price ranges)
+/// 4. Users withdraw proportional liquidity (both SUI and TOKEN)
 ///
 module tradepool::tradepool {
     use sui::balance::{Self, Balance};
@@ -28,7 +28,9 @@ module tradepool::tradepool {
 
     // Momentum DEX imports
     use mmt_v3::pool::{Pool as MomentumPool};
-    use mmt_v3::trade;
+    use mmt_v3::position::{Position};
+    use mmt_v3::liquidity;
+    use mmt_v3::i32::{I32};
     use mmt_v3::version::{Version};
 
     // ====== Error Constants ======
@@ -118,15 +120,40 @@ module tradepool::tradepool {
         pool_total_shares: u64,
     }
 
-    /// Emitted when admin executes a trade (buy token with SUI)
-    public struct TradeExecutedEvent has copy, drop {
+    /// Emitted when admin opens a new position in Momentum DEX
+    public struct PositionOpenedEvent has copy, drop {
         pool_id: ID,
-        trader: address,
-        sui_amount_in: u64,
-        token_amount_out: u64,
-        direction: String, // "buy" or "sell"
+        admin: address,
+        tick_lower: u64,
+        tick_upper: u64,
+        sui_amount: u64,
+        token_amount: u64,
+    }
+
+    /// Emitted when admin adds liquidity to a position
+    public struct LiquidityAddedEvent has copy, drop {
+        pool_id: ID,
+        admin: address,
+        sui_amount: u64,
+        token_amount: u64,
         pool_sui_balance: u64,
         pool_token_balance: u64,
+    }
+
+    /// Emitted when admin removes liquidity from a position
+    public struct LiquidityRemovedEvent has copy, drop {
+        pool_id: ID,
+        admin: address,
+        sui_amount: u64,
+        token_amount: u64,
+        pool_sui_balance: u64,
+        pool_token_balance: u64,
+    }
+
+    /// Emitted when admin closes a position
+    public struct PositionClosedEvent has copy, drop {
+        pool_id: ID,
+        admin: address,
     }
 
     // ====== Init Function ======
@@ -324,194 +351,235 @@ module tradepool::tradepool {
         (sui_coin, token_coin)
     }
 
-    // ====== Admin Trading Functions ======
+    // ====== Admin Liquidity Management Functions ======
 
-    /// Admin function to buy TOKEN with SUI via Momentum DEX
+    /// Admin function to open a new concentrated liquidity position in Momentum DEX
     ///
     /// Only the pool admin (creator) can execute this function.
-    /// Executes a flash swap on Momentum DEX to trade SUI for TOKEN.
-    /// Uses Momentum's CLMM (Concentrated Liquidity Market Maker) for optimal pricing.
+    /// Opens a position with liquidity concentrated in a specific price range (tick range).
     ///
     /// Parameters:
     /// - momentum_pool: Mutable reference to the Momentum CLMM pool for SUI/TOKEN pair
-    /// - sqrt_price_limit: Maximum sqrt price (use 0 for no limit, or calculate via TickMath)
+    /// - tick_lower: Lower tick boundary of the price range
+    /// - tick_upper: Upper tick boundary of the price range
+    /// - sui_coin: SUI to add as liquidity (from pool balance)
+    /// - token_coin: TOKEN to add as liquidity (from pool balance)
+    /// - min_sui: Minimum SUI to add (slippage protection)
+    /// - min_token: Minimum TOKEN to add (slippage protection)
     /// - clock: Sui Clock for timestamp validation
     /// - version: Momentum version object for protocol validation
-    public fun admin_buy_token<TOKEN>(
+    ///
+    /// Returns: Position object and refund coins (if any)
+    public fun admin_open_position<TOKEN>(
         pool: &mut Pool<TOKEN>,
         momentum_pool: &mut MomentumPool<SUI, TOKEN>,
-        sui_payment: Coin<SUI>,
-        min_token_out: u64,
-        sqrt_price_limit: u128,
+        tick_lower: I32,
+        tick_upper: I32,
+        sui_coin: Coin<SUI>,
+        token_coin: Coin<TOKEN>,
+        min_sui: u64,
+        min_token: u64,
         clock: &Clock,
         version: &Version,
         ctx: &mut TxContext
-    ): Coin<TOKEN> {
-        // Only pool admin can execute trades
+    ): (Position, Coin<SUI>, Coin<TOKEN>) {
+        // Only pool admin can manage liquidity
         assert!(ctx.sender() == pool.admin, ENotPoolAdmin);
 
-        let sui_amount = coin::value(&sui_payment);
-        assert!(sui_amount > 0, EZeroAmount);
+        let sui_amount = coin::value(&sui_coin);
+        let token_amount = coin::value(&token_coin);
 
-        // Execute flash swap on Momentum DEX
-        // is_x_to_y = true (SUI -> TOKEN)
-        // exact_input = true (we know exactly how much SUI we're trading)
-        let (balance_sui_out, balance_token_out, flash_receipt) = trade::flash_swap<SUI, TOKEN>(
+        // Open new position in Momentum DEX
+        let mut position = liquidity::open_position<SUI, TOKEN>(
             momentum_pool,
-            true,           // is_x_to_y: trading SUI (X) for TOKEN (Y)
-            true,           // exact_input: we specify exact SUI amount
-            sui_amount,     // amount_specified
-            sqrt_price_limit,
+            tick_lower,
+            tick_upper,
+            version,
+            ctx,
+        );
+
+        // Add liquidity to the position
+        let (sui_refund, token_refund) = liquidity::add_liquidity<SUI, TOKEN>(
+            momentum_pool,
+            &mut position,
+            sui_coin,
+            token_coin,
+            min_sui,
+            min_token,
             clock,
             version,
             ctx,
         );
 
-        // Get the debt amounts from the flash swap receipt
-        let (sui_debt, _token_debt) = trade::swap_receipt_debts(&flash_receipt);
-
-        // Verify we got enough tokens (slippage protection)
-        let token_received = balance::value(&balance_token_out);
-        assert!(token_received >= min_token_out, ESlippageExceeded);
-
-        // Prepare repayment: we owe SUI debt
-        let mut sui_to_repay = coin::into_balance(sui_payment);
-
-        // If there's any excess SUI (shouldn't happen with exact_input), add to pool
-        let sui_balance_value = balance::value(&sui_to_repay);
-        if (sui_balance_value > sui_debt) {
-            let excess = balance::split(&mut sui_to_repay, sui_balance_value - sui_debt);
-            balance::join(&mut pool.sui_balance, excess);
-        };
-
-        // Create empty token balance for repayment (we don't owe tokens in X->Y swap)
-        let empty_token_balance = balance::zero<TOKEN>();
-
-        // Repay the flash swap
-        trade::repay_flash_swap<SUI, TOKEN>(
-            momentum_pool,
-            flash_receipt,
-            sui_to_repay,
-            empty_token_balance,
-            version,
-            ctx,
-        );
-
-        // Handle the SUI balance returned from flash swap (should be empty for exact input)
-        balance::destroy_zero(balance_sui_out);
-
-        // Add received tokens to our pool's reserves
-        let token_amount = balance::value(&balance_token_out);
-        balance::join(&mut pool.token_balance, balance_token_out);
+        // Calculate actual amounts added (minus refunds)
+        let sui_added = sui_amount - coin::value(&sui_refund);
+        let token_added = token_amount - coin::value(&token_refund);
 
         // Emit event
-        event::emit(TradeExecutedEvent {
+        event::emit(PositionOpenedEvent {
             pool_id: object::uid_to_inner(&pool.id),
-            trader: ctx.sender(),
-            sui_amount_in: sui_amount,
-            token_amount_out: token_amount,
-            direction: string::utf8(b"buy"),
-            pool_sui_balance: balance::value(&pool.sui_balance),
-            pool_token_balance: balance::value(&pool.token_balance),
+            admin: ctx.sender(),
+            tick_lower: 0, // I32 to u64 conversion needed
+            tick_upper: 0, // I32 to u64 conversion needed
+            sui_amount: sui_added,
+            token_amount: token_added,
         });
 
-        // Return the tokens as a coin to the admin
-        let token_to_return = balance::split(&mut pool.token_balance, token_amount);
-        coin::from_balance(token_to_return, ctx)
+        (position, sui_refund, token_refund)
     }
 
-    /// Admin function to sell TOKEN for SUI via Momentum DEX
+    /// Admin function to add more liquidity to an existing position
     ///
-    /// Only the pool admin (creator) can execute this function.
-    /// Executes a flash swap on Momentum DEX to trade TOKEN for SUI.
-    /// Uses Momentum's CLMM (Concentrated Liquidity Market Maker) for optimal pricing.
+    /// Only the pool admin can execute this function.
     ///
     /// Parameters:
-    /// - momentum_pool: Mutable reference to the Momentum CLMM pool for SUI/TOKEN pair
-    /// - sqrt_price_limit: Minimum sqrt price (use max u128 for no limit, or calculate via TickMath)
-    /// - clock: Sui Clock for timestamp validation
-    /// - version: Momentum version object for protocol validation
-    public fun admin_sell_token<TOKEN>(
+    /// - position: Mutable reference to the position
+    /// - momentum_pool: Mutable reference to the Momentum CLMM pool
+    /// - sui_coin: SUI to add
+    /// - token_coin: TOKEN to add
+    /// - min_sui: Minimum SUI to add (slippage protection)
+    /// - min_token: Minimum TOKEN to add (slippage protection)
+    /// - clock: Sui Clock
+    /// - version: Momentum version object
+    ///
+    /// Returns: Refund coins (if any)
+    public fun admin_add_liquidity<TOKEN>(
         pool: &mut Pool<TOKEN>,
         momentum_pool: &mut MomentumPool<SUI, TOKEN>,
-        token_payment: Coin<TOKEN>,
-        min_sui_out: u64,
-        sqrt_price_limit: u128,
+        position: &mut Position,
+        sui_coin: Coin<SUI>,
+        token_coin: Coin<TOKEN>,
+        min_sui: u64,
+        min_token: u64,
         clock: &Clock,
         version: &Version,
         ctx: &mut TxContext
-    ): Coin<SUI> {
-        // Only pool admin can execute trades
+    ): (Coin<SUI>, Coin<TOKEN>) {
+        // Only pool admin can manage liquidity
         assert!(ctx.sender() == pool.admin, ENotPoolAdmin);
 
-        let token_amount = coin::value(&token_payment);
-        assert!(token_amount > 0, EZeroAmount);
+        let sui_amount = coin::value(&sui_coin);
+        let token_amount = coin::value(&token_coin);
 
-        // Execute flash swap on Momentum DEX
-        // is_x_to_y = false (TOKEN -> SUI, i.e., Y -> X)
-        // exact_input = true (we know exactly how much TOKEN we're trading)
-        let (balance_sui_out, balance_token_out, flash_receipt) = trade::flash_swap<SUI, TOKEN>(
+        // Add liquidity to the position
+        let (sui_refund, token_refund) = liquidity::add_liquidity<SUI, TOKEN>(
             momentum_pool,
-            false,          // is_x_to_y: trading TOKEN (Y) for SUI (X)
-            true,           // exact_input: we specify exact TOKEN amount
-            token_amount,   // amount_specified
-            sqrt_price_limit,
+            position,
+            sui_coin,
+            token_coin,
+            min_sui,
+            min_token,
             clock,
             version,
             ctx,
         );
 
-        // Get the debt amounts from the flash swap receipt
-        let (_sui_debt, token_debt) = trade::swap_receipt_debts(&flash_receipt);
-
-        // Verify we got enough SUI (slippage protection)
-        let sui_received = balance::value(&balance_sui_out);
-        assert!(sui_received >= min_sui_out, ESlippageExceeded);
-
-        // Prepare repayment: we owe TOKEN debt
-        let mut token_to_repay = coin::into_balance(token_payment);
-
-        // If there's any excess TOKEN (shouldn't happen with exact_input), add to pool
-        let token_balance_value = balance::value(&token_to_repay);
-        if (token_balance_value > token_debt) {
-            let excess = balance::split(&mut token_to_repay, token_balance_value - token_debt);
-            balance::join(&mut pool.token_balance, excess);
-        };
-
-        // Create empty SUI balance for repayment (we don't owe SUI in Y->X swap)
-        let empty_sui_balance = balance::zero<SUI>();
-
-        // Repay the flash swap
-        trade::repay_flash_swap<SUI, TOKEN>(
-            momentum_pool,
-            flash_receipt,
-            empty_sui_balance,
-            token_to_repay,
-            version,
-            ctx,
-        );
-
-        // Handle the TOKEN balance returned from flash swap (should be empty for exact input)
-        balance::destroy_zero(balance_token_out);
-
-        // Add received SUI to our pool's reserves
-        let sui_amount = balance::value(&balance_sui_out);
-        balance::join(&mut pool.sui_balance, balance_sui_out);
+        // Calculate actual amounts added
+        let sui_added = sui_amount - coin::value(&sui_refund);
+        let token_added = token_amount - coin::value(&token_refund);
 
         // Emit event
-        event::emit(TradeExecutedEvent {
+        event::emit(LiquidityAddedEvent {
             pool_id: object::uid_to_inner(&pool.id),
-            trader: ctx.sender(),
-            sui_amount_in: sui_amount,
-            token_amount_out: token_amount,
-            direction: string::utf8(b"sell"),
+            admin: ctx.sender(),
+            sui_amount: sui_added,
+            token_amount: token_added,
             pool_sui_balance: balance::value(&pool.sui_balance),
             pool_token_balance: balance::value(&pool.token_balance),
         });
 
-        // Return the SUI as a coin to the admin
-        let sui_to_return = balance::split(&mut pool.sui_balance, sui_amount);
-        coin::from_balance(sui_to_return, ctx)
+        (sui_refund, token_refund)
+    }
+
+    /// Admin function to remove liquidity from a position
+    ///
+    /// Only the pool admin can execute this function.
+    ///
+    /// Parameters:
+    /// - position: Mutable reference to the position
+    /// - momentum_pool: Mutable reference to the Momentum CLMM pool
+    /// - liquidity_amount: Amount of liquidity to remove (u128)
+    /// - min_sui: Minimum SUI to receive (slippage protection)
+    /// - min_token: Minimum TOKEN to receive (slippage protection)
+    /// - clock: Sui Clock
+    /// - version: Momentum version object
+    ///
+    /// Returns: Withdrawn SUI and TOKEN coins
+    public fun admin_remove_liquidity<TOKEN>(
+        pool: &mut Pool<TOKEN>,
+        momentum_pool: &mut MomentumPool<SUI, TOKEN>,
+        position: &mut Position,
+        liquidity_amount: u128,
+        min_sui: u64,
+        min_token: u64,
+        clock: &Clock,
+        version: &Version,
+        ctx: &mut TxContext
+    ): (Coin<SUI>, Coin<TOKEN>) {
+        // Only pool admin can manage liquidity
+        assert!(ctx.sender() == pool.admin, ENotPoolAdmin);
+
+        // Remove liquidity from the position
+        let (sui_coin, token_coin) = liquidity::remove_liquidity<SUI, TOKEN>(
+            momentum_pool,
+            position,
+            liquidity_amount,
+            min_sui,
+            min_token,
+            clock,
+            version,
+            ctx,
+        );
+
+        let sui_amount = coin::value(&sui_coin);
+        let token_amount = coin::value(&token_coin);
+
+        // Add withdrawn tokens to pool reserves
+        balance::join(&mut pool.sui_balance, coin::into_balance(sui_coin));
+        balance::join(&mut pool.token_balance, coin::into_balance(token_coin));
+
+        // Emit event
+        event::emit(LiquidityRemovedEvent {
+            pool_id: object::uid_to_inner(&pool.id),
+            admin: ctx.sender(),
+            sui_amount,
+            token_amount,
+            pool_sui_balance: balance::value(&pool.sui_balance),
+            pool_token_balance: balance::value(&pool.token_balance),
+        });
+
+        // Return coins from pool balance
+        let sui_out = coin::from_balance(balance::split(&mut pool.sui_balance, sui_amount), ctx);
+        let token_out = coin::from_balance(balance::split(&mut pool.token_balance, token_amount), ctx);
+
+        (sui_out, token_out)
+    }
+
+    /// Admin function to close an empty position
+    ///
+    /// Only the pool admin can execute this function.
+    /// The position must be empty (all liquidity removed) before it can be closed.
+    ///
+    /// Parameters:
+    /// - position: The position to close
+    /// - version: Momentum version object
+    public fun admin_close_position<TOKEN>(
+        pool: &Pool<TOKEN>,
+        position: Position,
+        version: &Version,
+        ctx: &TxContext
+    ) {
+        // Only pool admin can manage liquidity
+        assert!(ctx.sender() == pool.admin, ENotPoolAdmin);
+
+        // Close the position (will abort if not empty)
+        liquidity::close_position(position, version, ctx);
+
+        // Emit event
+        event::emit(PositionClosedEvent {
+            pool_id: object::uid_to_inner(&pool.id),
+            admin: ctx.sender(),
+        });
     }
 
     // ====== View Functions ======
