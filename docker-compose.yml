@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  # TradePool Telegram Bot
+  tradepool-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: tradepool-bot
+    restart: unless-stopped
+    environment:
+      # Telegram Configuration
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS}
+      
+      # Sui Network Configuration
+      SUI_RPC_URL: ${SUI_RPC_URL:-https://fullnode.testnet.sui.io:443}
+      SUI_NETWORK: ${SUI_NETWORK:-testnet}
+      SUI_PACKAGE_ID: ${SUI_PACKAGE_ID}
+      SUI_REGISTRY_ID: ${SUI_REGISTRY_ID}
+      SUI_ADMIN_CAP_ID: ${SUI_ADMIN_CAP_ID}
+      
+      # Database Configuration
+      DATABASE_URL: postgresql://${DB_USER:-tradepool}:${DB_PASSWORD:-changeme}@postgres:5432/${DB_NAME:-tradepool}
+      REDIS_URL: redis://redis:6379
+      
+      # Security
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      
+      # Application Settings
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      
+      # Explorer
+      EXPLORER_BASE_URL: ${EXPLORER_BASE_URL:-https://suiscan.xyz/testnet/tx/}
+    volumes:
+      - ./apps/telegramBot/logs:/app/apps/telegramBot/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - tradepool-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:14-alpine
+    container_name: tradepool-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-tradepool}
+      POSTGRES_USER: ${DB_USER:-tradepool}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./apps/telegramBot/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - tradepool-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-tradepool}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: tradepool-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - tradepool-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tradepool-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@tradepool.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    networks:
+      - tradepool-network
+    profiles:
+      - tools
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  pgadmin-data:
+    driver: local
+
+networks:
+  tradepool-network:
+    driver: bridge
