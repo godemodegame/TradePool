@@ -5,8 +5,8 @@ import { PACKAGE_ID, REGISTRY_ID } from '../types'
 
 export function CreatePool() {
   const [poolName, setPoolName] = useState('')
-  const [tokenType, setTokenType] = useState('')
-  const [momentumPoolId, setMomentumPoolId] = useState('')
+  const [tokenType, setTokenType] = useState('0x2cee0cb40dcda8dcbed23df9eafdf1638cdc9578380597cd00912bee45d41762::tDEEP::TDEEP')
+  const [momentumPoolId, setMomentumPoolId] = useState('0xaa740e3d58ecfd2323eb5ab4cedab5f07554385d96aea2d5050471aba1e2e0ea')
   const [loading, setLoading] = useState(false)
 
   const { mutate: signAndExecute } = useSignAndExecuteTransaction()
