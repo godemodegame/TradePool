@@ -27,3 +27,13 @@ node_modules/
 *.tmp
 tmp/
 temp/
+
+# Telegram Bot
+apps/telegramBot/node_modules/
+apps/telegramBot/dist/
+apps/telegramBot/logs/
+apps/telegramBot/.env
+apps/telegramBot/coverage/
+
+# Docker
+docker-compose.override.yml
