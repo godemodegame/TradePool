@@ -38,14 +38,15 @@ module tradepool::tradepool {
     const EInsufficientBalance: u64 = 3;
     const ESlippageExceeded: u64 = 4;
     const EInvalidReceipt: u64 = 5;
+    const ENotPoolAdmin: u64 = 6;
 
     // ====== Structs ======
 
     /// Registry of all trading pools
     public struct PoolRegistry has key {
         id: UID,
-        /// Maps token type name to pool ID
-        pools: Table<TypeName, ID>,
+        /// Maps pool name to pool ID (allows multiple pools per token)
+        pools: Table<String, ID>,
         pool_count: u64,
     }
 
@@ -60,6 +61,8 @@ module tradepool::tradepool {
         id: UID,
         /// Pool name for identification
         name: String,
+        /// Admin address - creator of the pool
+        admin: address,
         /// Balance of SUI in the pool
         sui_balance: Balance<SUI>,
         /// Balance of the paired token
@@ -148,8 +151,8 @@ module tradepool::tradepool {
 
     // ====== Pool Creation ======
 
-    /// Create a new trading pool for SUI/TOKEN pair
-    /// Only admin can create pools
+    /// Create a new trading pool for SUI/TOKEN pair (Admin only - deprecated)
+    /// Use create_pool_public instead
     public fun create_pool<TOKEN>(
         _admin_cap: &AdminCap,
         registry: &mut PoolRegistry,
@@ -157,10 +160,32 @@ module tradepool::tradepool {
         momentum_pool_id: ID,
         ctx: &mut TxContext
     ) {
-        let token_type = type_name::get<TOKEN>();
+        create_pool_internal<TOKEN>(registry, name, momentum_pool_id, ctx)
+    }
 
-        // Check if pool for this token already exists
-        assert!(!table::contains(&registry.pools, token_type), EPoolAlreadyExists);
+    /// Create a new trading pool for SUI/TOKEN pair
+    /// Anyone can create a pool for any token type
+    public fun create_pool_public<TOKEN>(
+        registry: &mut PoolRegistry,
+        name: vector<u8>,
+        momentum_pool_id: ID,
+        ctx: &mut TxContext
+    ) {
+        create_pool_internal<TOKEN>(registry, name, momentum_pool_id, ctx)
+    }
+
+    /// Internal function for pool creation logic
+    fun create_pool_internal<TOKEN>(
+        registry: &mut PoolRegistry,
+        name: vector<u8>,
+        momentum_pool_id: ID,
+        ctx: &mut TxContext
+    ) {
+        let token_type = type_name::get<TOKEN>();
+        let pool_name = string::utf8(name);
+
+        // Check if pool with this name already exists
+        assert!(!table::contains(&registry.pools, pool_name), EPoolAlreadyExists);
 
         // Create the pool
         let pool_uid = object::new(ctx);
@@ -169,20 +194,21 @@ module tradepool::tradepool {
         let pool = Pool<TOKEN> {
             id: pool_uid,
             name: string::utf8(name),
+            admin: ctx.sender(),
             sui_balance: balance::zero(),
             token_balance: balance::zero(),
             total_shares: 0,
             momentum_pool_id,
         };
 
-        // Register pool in registry
-        table::add(&mut registry.pools, token_type, pool_id);
+        // Register pool in registry by name (allows multiple pools per token)
+        table::add(&mut registry.pools, pool_name, pool_id);
         registry.pool_count = registry.pool_count + 1;
 
         // Emit event
         event::emit(PoolCreatedEvent {
             pool_id,
-            pool_name: string::utf8(name),
+            pool_name,
             token_type,
             creator: ctx.sender(),
         });
@@ -361,6 +387,7 @@ module tradepool::tradepool {
 
     /// Admin function to buy TOKEN with SUI via Momentum DEX
     ///
+    /// Only the pool admin (creator) can execute this function.
     /// Executes a flash swap on Momentum DEX to trade SUI for TOKEN.
     /// Uses Momentum's CLMM (Concentrated Liquidity Market Maker) for optimal pricing.
     ///
@@ -370,7 +397,6 @@ module tradepool::tradepool {
     /// - clock: Sui Clock for timestamp validation
     /// - version: Momentum version object for protocol validation
     public fun admin_buy_token<TOKEN>(
-        _admin_cap: &AdminCap,
         pool: &mut Pool<TOKEN>,
         momentum_pool: &mut MomentumPool<SUI, TOKEN>,
         sui_payment: Coin<SUI>,
@@ -380,6 +406,9 @@ module tradepool::tradepool {
         version: &Version,
         ctx: &mut TxContext
     ): Coin<TOKEN> {
+        // Only pool admin can execute trades
+        assert!(ctx.sender() == pool.admin, ENotPoolAdmin);
+
         let sui_amount = coin::value(&sui_payment);
         assert!(sui_amount > 0, EZeroAmount);
 
@@ -452,6 +481,7 @@ module tradepool::tradepool {
 
     /// Admin function to sell TOKEN for SUI via Momentum DEX
     ///
+    /// Only the pool admin (creator) can execute this function.
     /// Executes a flash swap on Momentum DEX to trade TOKEN for SUI.
     /// Uses Momentum's CLMM (Concentrated Liquidity Market Maker) for optimal pricing.
     ///
@@ -461,7 +491,6 @@ module tradepool::tradepool {
     /// - clock: Sui Clock for timestamp validation
     /// - version: Momentum version object for protocol validation
     public fun admin_sell_token<TOKEN>(
-        _admin_cap: &AdminCap,
         pool: &mut Pool<TOKEN>,
         momentum_pool: &mut MomentumPool<SUI, TOKEN>,
         token_payment: Coin<TOKEN>,
@@ -471,6 +500,9 @@ module tradepool::tradepool {
         version: &Version,
         ctx: &mut TxContext
     ): Coin<SUI> {
+        // Only pool admin can execute trades
+        assert!(ctx.sender() == pool.admin, ENotPoolAdmin);
+
         let token_amount = coin::value(&token_payment);
         assert!(token_amount > 0, EZeroAmount);
 
@@ -548,6 +580,11 @@ module tradepool::tradepool {
         pool.name
     }
 
+    /// Get pool admin address
+    public fun get_pool_admin<TOKEN>(pool: &Pool<TOKEN>): address {
+        pool.admin
+    }
+
     /// Get the current SUI balance in the pool
     public fun get_pool_sui_balance<TOKEN>(pool: &Pool<TOKEN>): u64 {
         balance::value(&pool.sui_balance)
@@ -591,10 +628,17 @@ module tradepool::tradepool {
         registry.pool_count
     }
 
-    /// Check if a pool exists for a given token type
-    public fun pool_exists<TOKEN>(registry: &PoolRegistry): bool {
-        let token_type = type_name::get<TOKEN>();
-        table::contains(&registry.pools, token_type)
+    /// Check if a pool exists with a given name
+    public fun pool_exists(registry: &PoolRegistry, pool_name: String): bool {
+        table::contains(&registry.pools, pool_name)
+    }
+
+    /// Check if a pool exists for a given token type (deprecated - use pool_exists with name)
+    /// Returns false since pools are now identified by name, not token type
+    public fun pool_exists_by_type<TOKEN>(registry: &PoolRegistry): bool {
+        let _ = type_name::get<TOKEN>();
+        let _ = registry;
+        false
     }
 
     /// Get receipt shares amount
