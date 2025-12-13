@@ -4,18 +4,9 @@ import { DepositLiquidity } from './components/DepositLiquidity'
 import { WithdrawLiquidity } from './components/WithdrawLiquidity'
 import { AdminTrading } from './components/AdminTrading'
 import { PoolList } from './components/PoolList'
-import { TransactionChecker } from './components/TransactionChecker'
-import { useEffect } from 'react'
-import { checkPoolTransactions } from './utils/checkPool'
 
 function App() {
   const account = useCurrentAccount()
-
-  // Make debugging function available in console
-  useEffect(() => {
-    (window as any).checkPool = checkPoolTransactions
-    console.log('💡 Debug tool available: Run checkPool() in console to check pool transactions')
-  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -46,9 +37,6 @@ function App() {
           <div className="space-y-8">
             {/* Pool List */}
             <PoolList />
-
-            {/* Transaction Checker - Full Width */}
-            <TransactionChecker />
 
             {/* Tabs for different operations */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

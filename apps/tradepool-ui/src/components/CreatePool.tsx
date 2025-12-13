@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useSignAndExecuteTransaction, useSuiClient } from '@mysten/dapp-kit'
+import { useSignAndExecuteTransaction, useSuiClient, useCurrentAccount } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
-import { PACKAGE_ID, REGISTRY_ID, ADMIN_CAP_ID } from '../types'
+import { PACKAGE_ID, REGISTRY_ID } from '../types'
 
 export function CreatePool() {
   const [poolName, setPoolName] = useState('')
@@ -10,9 +10,15 @@ export function CreatePool() {
   const [loading, setLoading] = useState(false)
 
   const { mutate: signAndExecute } = useSignAndExecuteTransaction()
+  const currentAccount = useCurrentAccount()
   const client = useSuiClient()
 
   const handleCreatePool = async () => {
+    if (!currentAccount) {
+      alert('Please connect your wallet')
+      return
+    }
+
     if (!poolName || !tokenType || !momentumPoolId) {
       alert('Please fill in all fields')
       return
@@ -26,13 +32,15 @@ export function CreatePool() {
       // Normalize token type: replace multiple colons with double colons
       const normalizedTokenType = tokenType.replace(/:{3,}/g, '::')
 
+      // Convert pool name string to bytes (vector<u8>)
+      const nameBytes = Array.from(new TextEncoder().encode(poolName))
+
       tx.moveCall({
-        target: `${PACKAGE_ID}::tradepool::create_pool`,
+        target: `${PACKAGE_ID}::tradepool::create_pool_public`,
         arguments: [
-          tx.object(ADMIN_CAP_ID),
           tx.object(REGISTRY_ID),
-          tx.pure.string(poolName),
-          tx.pure.id(momentumPoolId),
+          tx.pure.vector('u8', nameBytes),
+          tx.pure.address(momentumPoolId),
         ],
         typeArguments: [normalizedTokenType],
       })
@@ -44,7 +52,7 @@ export function CreatePool() {
         {
           onSuccess: (result) => {
             console.log('Pool created successfully:', result)
-            alert('Pool created successfully!')
+            alert(`Pool created successfully! Transaction: ${result.digest}`)
             setPoolName('')
             setTokenType('')
             setMomentumPoolId('')
@@ -74,6 +82,9 @@ export function CreatePool() {
           value={poolName}
           onChange={(e) => setPoolName(e.target.value)}
         />
+        <p className="text-xs text-gray-500 mt-1">
+          A human-readable name for the pool (e.g., "SUI-USDC", "SUI-DEEP")
+        </p>
       </div>
 
       <div>
@@ -81,12 +92,12 @@ export function CreatePool() {
         <input
           type="text"
           className="input"
-          placeholder="0x...::token::TOKEN"
+          placeholder="0x...::module::TOKEN"
           value={tokenType}
           onChange={(e) => setTokenType(e.target.value)}
         />
         <p className="text-xs text-gray-500 mt-1">
-          Example: 0x2::sui::SUI or your custom token type
+          Full token type path. Example: 0x2cee0cb40dcda8dcbed23df9eafdf1638cdc9578380597cd00912bee45d41762::tDEEP::TDEEP
         </p>
         {tokenType && tokenType.includes('::::') && (
           <p className="text-xs text-yellow-600 mt-1">
@@ -104,14 +115,17 @@ export function CreatePool() {
           value={momentumPoolId}
           onChange={(e) => setMomentumPoolId(e.target.value)}
         />
+        <p className="text-xs text-gray-500 mt-1">
+          The ID of the Momentum DEX pool for this token pair
+        </p>
       </div>
 
       <button
         className="btn btn-primary w-full"
         onClick={handleCreatePool}
-        disabled={loading}
+        disabled={loading || !currentAccount}
       >
-        {loading ? 'Creating...' : 'Create Pool'}
+        {loading ? 'Creating...' : !currentAccount ? 'Connect Wallet' : 'Create Pool'}
       </button>
     </div>
   )

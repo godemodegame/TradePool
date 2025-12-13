@@ -6,7 +6,13 @@
       "WebSearch",
       "WebFetch(domain:docs.mmt.finance)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(sui client object:*)",
+      "Bash(sui client gas:*)",
+      "Bash(sui client:*)",
+      "Bash(npm run dev)",
+      "Bash(git add:*)",
+      "Bash(git push:*)"
     ]
   }
 }

@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useSignAndExecuteTransaction, useCurrentAccount, useSuiClient } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
-import { PACKAGE_ID, PREDEFINED_POOLS } from '../types'
+import { PACKAGE_ID } from '../types'
+
+interface PoolOption {
+  id: string
+  name: string
+  tokenType: string
+}
 
 interface UserLPReceipt {
   id: string
@@ -11,6 +17,8 @@ interface UserLPReceipt {
 }
 
 export function WithdrawLiquidity() {
+  const [pools, setPools] = useState<PoolOption[]>([])
+  const [loadingPools, setLoadingPools] = useState(false)
   const [selectedPoolIndex, setSelectedPoolIndex] = useState<number>(-1)
   const [receipts, setReceipts] = useState<UserLPReceipt[]>([])
   const [allReceipts, setAllReceipts] = useState<any[]>([])
@@ -23,7 +31,39 @@ export function WithdrawLiquidity() {
   const currentAccount = useCurrentAccount()
   const client = useSuiClient()
 
-  const selectedPool = selectedPoolIndex >= 0 ? PREDEFINED_POOLS[selectedPoolIndex] : null
+  const selectedPool = selectedPoolIndex >= 0 ? pools[selectedPoolIndex] : null
+
+  // Fetch available pools
+  useEffect(() => {
+    const fetchPools = async () => {
+      setLoadingPools(true)
+      try {
+        const events = await client.queryEvents({
+          query: {
+            MoveEventType: `${PACKAGE_ID}::tradepool::PoolCreatedEvent`,
+          },
+          limit: 50,
+        })
+
+        const poolOptions: PoolOption[] = events.data.map((event) => {
+          const parsedEvent = event.parsedJson as any
+          return {
+            id: parsedEvent.pool_id,
+            name: parsedEvent.pool_name || 'Unknown Pool',
+            tokenType: parsedEvent.token_type?.name || '',
+          }
+        })
+
+        setPools(poolOptions)
+      } catch (error) {
+        console.error('Error fetching pools:', error)
+      } finally {
+        setLoadingPools(false)
+      }
+    }
+
+    fetchPools()
+  }, [])
 
   // Fetch user's LP receipts
   const fetchReceipts = async () => {
@@ -188,14 +228,19 @@ export function WithdrawLiquidity() {
           className="input"
           value={selectedPoolIndex}
           onChange={(e) => setSelectedPoolIndex(Number(e.target.value))}
+          disabled={loadingPools}
         >
           <option value={-1}>-- Select a pool --</option>
-          {PREDEFINED_POOLS.map((pool, index) => (
-            <option key={index} value={index}>
+          {pools.map((pool, index) => (
+            <option key={pool.id} value={index}>
               {pool.name}
             </option>
           ))}
         </select>
+        {loadingPools && <p className="text-xs text-gray-400 mt-1">Loading pools...</p>}
+        {pools.length === 0 && !loadingPools && (
+          <p className="text-xs text-yellow-400 mt-1">No pools found. Create a pool first!</p>
+        )}
       </div>
 
       {selectedPool && (
