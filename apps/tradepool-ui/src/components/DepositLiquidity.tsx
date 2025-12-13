@@ -1,23 +1,62 @@
-import { useState } from 'react'
-import { useSignAndExecuteTransaction, useCurrentAccount } from '@mysten/dapp-kit'
+import { useState, useEffect } from 'react'
+import { useSignAndExecuteTransaction, useCurrentAccount, useSuiClient } from '@mysten/dapp-kit'
 import { Transaction } from '@mysten/sui/transactions'
-import { PACKAGE_ID, POOL_SUI_DEEP_ID, TDEEP_COIN_TYPE } from '../types'
+import { PACKAGE_ID } from '../types'
 import { useCoins } from '../hooks/useCoins'
+
+interface PoolOption {
+  id: string
+  name: string
+  tokenType: string
+}
 
 export function DepositLiquidity() {
   const account = useCurrentAccount()
-  const [poolId, setPoolId] = useState(POOL_SUI_DEEP_ID)
-  const [tokenType, setTokenType] = useState(TDEEP_COIN_TYPE)
+  const client = useSuiClient()
+  const [pools, setPools] = useState<PoolOption[]>([])
+  const [loadingPools, setLoadingPools] = useState(false)
+  const [selectedPoolIndex, setSelectedPoolIndex] = useState(-1)
   const [suiAmount, setSuiAmount] = useState('')
-  const [tokenAmount, setTokenAmount] = useState('')
-  const [suiOnly, setSuiOnly] = useState(false) // Default to dual token mode
   const [loading, setLoading] = useState(false)
 
   const { mutate: signAndExecute } = useSignAndExecuteTransaction()
 
-  // Automatically fetch user's coins
-  const { coins: suiCoins, totalBalance: suiBalance, loading: suiLoading } = useCoins('0x2::sui::SUI')
-  const { coins: tokenCoins, totalBalance: tokenBalance, loading: tokenLoading } = useCoins(tokenType)
+  const selectedPool = selectedPoolIndex >= 0 ? pools[selectedPoolIndex] : null
+
+  // Fetch available pools
+  useEffect(() => {
+    const fetchPools = async () => {
+      setLoadingPools(true)
+      try {
+        const events = await client.queryEvents({
+          query: {
+            MoveEventType: `${PACKAGE_ID}::tradepool::PoolCreatedEvent`,
+          },
+          limit: 50,
+        })
+
+        const poolOptions: PoolOption[] = events.data.map((event) => {
+          const parsedEvent = event.parsedJson as any
+          return {
+            id: parsedEvent.pool_id,
+            name: parsedEvent.pool_name || 'Unknown Pool',
+            tokenType: parsedEvent.token_type?.name || '',
+          }
+        })
+
+        setPools(poolOptions)
+      } catch (error) {
+        console.error('Error fetching pools:', error)
+      } finally {
+        setLoadingPools(false)
+      }
+    }
+
+    fetchPools()
+  }, [])
+
+  // Automatically fetch user's SUI balance
+  const { totalBalance: suiBalance, loading: suiLoading } = useCoins('0x2::sui::SUI')
 
   const handleDeposit = async () => {
     if (!account) {
@@ -25,27 +64,14 @@ export function DepositLiquidity() {
       return
     }
 
-    if (!poolId || !tokenType) {
+    if (!selectedPool) {
       alert('Please select a pool')
       return
     }
 
-    if (suiOnly) {
-      // SUI-only mode: only need SUI amount
-      if (!suiAmount) {
-        alert('Please enter SUI amount')
-        return
-      }
-    } else {
-      // Dual token mode: need both amounts
-      if (!suiAmount || !tokenAmount) {
-        alert('Please fill in both amounts')
-        return
-      }
-      if (tokenCoins.length === 0) {
-        alert('You don\'t have any DEEP tokens. Please switch to "SUI Only" mode.')
-        return
-      }
+    if (!suiAmount) {
+      alert('Please enter SUI amount')
+      return
     }
 
     setLoading(true)
@@ -54,56 +80,26 @@ export function DepositLiquidity() {
       const tx = new Transaction()
 
       // Normalize token type: replace multiple colons with double colons
-      const normalizedTokenType = tokenType.replace(/:{3,}/g, '::')
+      const normalizedTokenType = selectedPool.tokenType.replace(/:{3,}/g, '::')
 
-      if (suiOnly) {
-        // SUI-only mode: deposit only SUI using deposit_sui_only function
-        const suiAmountMist = Math.floor(parseFloat(suiAmount) * 1e9)
+      // Convert SUI amount to MIST
+      const suiAmountMist = Math.floor(parseFloat(suiAmount) * 1e9)
 
-        // Split SUI coin for deposit
-        const [suiCoin] = tx.splitCoins(tx.gas, [suiAmountMist])
+      // Split SUI coin for deposit
+      const [suiCoin] = tx.splitCoins(tx.gas, [suiAmountMist])
 
-        // Call deposit_sui_only function and capture the returned LP receipt
-        const [receipt] = tx.moveCall({
-          target: `${PACKAGE_ID}::tradepool::deposit_sui_only`,
-          arguments: [
-            tx.object(poolId),
-            suiCoin,
-          ],
-          typeArguments: [normalizedTokenType],
-        })
+      // Call deposit function and capture the returned LP receipt
+      const [receipt] = tx.moveCall({
+        target: `${PACKAGE_ID}::tradepool::deposit`,
+        arguments: [
+          tx.object(selectedPool.id),
+          suiCoin,
+        ],
+        typeArguments: [normalizedTokenType],
+      })
 
-        // Transfer the LP receipt to the user
-        tx.transferObjects([receipt], tx.pure.address(account.address))
-      } else {
-        // Dual token mode: deposit both SUI and DEEP
-        const suiAmountMist = Math.floor(parseFloat(suiAmount) * 1e9)
-        const tokenAmountMist = Math.floor(parseFloat(tokenAmount) * 1e9)
-
-        // Split SUI coins from gas coin
-        const [suiCoin] = tx.splitCoins(tx.gas, [suiAmountMist])
-
-        // Use the first available token coin and split it
-        const firstTokenCoin = tokenCoins[0]
-        const [tokenCoin] = tx.splitCoins(
-          tx.object(firstTokenCoin.coinObjectId),
-          [tokenAmountMist]
-        )
-
-        // Call deposit function and capture the returned LP receipt
-        const [receipt] = tx.moveCall({
-          target: `${PACKAGE_ID}::tradepool::deposit`,
-          arguments: [
-            tx.object(poolId),
-            suiCoin,
-            tokenCoin,
-          ],
-          typeArguments: [normalizedTokenType],
-        })
-
-        // Transfer the LP receipt to the user
-        tx.transferObjects([receipt], tx.pure.address(account.address))
-      }
+      // Transfer the LP receipt to the user
+      tx.transferObjects([receipt], tx.pure.address(account.address))
 
       signAndExecute(
         {
@@ -114,7 +110,6 @@ export function DepositLiquidity() {
             console.log('Deposit successful:', result)
             alert('Deposit successful! You received an LP receipt.')
             setSuiAmount('')
-            setTokenAmount('')
           },
           onError: (error) => {
             console.error('Error depositing:', error)
@@ -134,99 +129,56 @@ export function DepositLiquidity() {
     <div className="space-y-4">
       {/* Wallet Balance Display */}
       <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
-        <p className="text-xs text-gray-400 mb-2">Your Balance</p>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <p className="text-white font-medium">
-              {suiLoading ? 'Loading...' : `${(Number(suiBalance) / 1e9).toFixed(4)} SUI`}
-            </p>
-          </div>
-          <div>
-            <p className="text-white font-medium">
-              {tokenLoading ? 'Loading...' : `${(Number(tokenBalance) / 1e9).toFixed(4)} DEEP`}
-            </p>
-          </div>
-        </div>
+        <p className="text-xs text-gray-400 mb-2">Your SUI Balance</p>
+        <p className="text-white font-semibold text-lg">
+          {suiLoading ? 'Loading...' : `${(Number(suiBalance) / 1e9).toFixed(4)} SUI`}
+        </p>
       </div>
 
       <div>
         <label className="label">Pool</label>
         <select
           className="input"
-          value={poolId}
-          onChange={(e) => setPoolId(e.target.value)}
+          value={selectedPoolIndex}
+          onChange={(e) => setSelectedPoolIndex(Number(e.target.value))}
+          disabled={loadingPools}
         >
-          <option value={POOL_SUI_DEEP_ID}>SUI-DEEP Pool</option>
+          <option value={-1}>-- Select a pool --</option>
+          {pools.map((pool, index) => (
+            <option key={pool.id} value={index}>
+              {pool.name}
+            </option>
+          ))}
         </select>
+        {loadingPools && <p className="text-xs text-gray-400 mt-1">Loading pools...</p>}
+        {pools.length === 0 && !loadingPools && (
+          <p className="text-xs text-yellow-400 mt-1">No pools found. Create a pool first!</p>
+        )}
+        {selectedPool && (
+          <div className="mt-2 p-2 bg-gray-900 rounded border border-gray-700">
+            <p className="text-xs text-gray-400">Selected Pool</p>
+            <p className="text-sm text-white font-medium">{selectedPool.name}</p>
+            <p className="text-xs text-gray-400 mt-1 font-mono break-all">
+              Token: {selectedPool.tokenType}
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* SUI Only Mode Toggle */}
-      <div className="flex items-center gap-3 bg-gray-900 rounded-lg p-3 border border-gray-700">
+      <div>
+        <label className="label">SUI Amount</label>
         <input
-          type="checkbox"
-          id="suiOnly"
-          checked={suiOnly}
-          onChange={(e) => setSuiOnly(e.target.checked)}
-          className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+          type="number"
+          step="0.01"
+          className="input"
+          placeholder="1.0"
+          value={suiAmount}
+          onChange={(e) => setSuiAmount(e.target.value)}
         />
-        <label htmlFor="suiOnly" className="text-sm text-white cursor-pointer">
-          Deposit SUI only (no DEEP tokens required)
-        </label>
+        <p className="text-xs text-gray-500 mt-1">
+          Available: {(Number(suiBalance) / 1e9).toFixed(4)} SUI
+        </p>
       </div>
-
-      {suiOnly ? (
-        /* SUI Only Mode - Single Input */
-        <div>
-          <label className="label">SUI Amount</label>
-          <input
-            type="number"
-            step="0.01"
-            className="input"
-            placeholder="1.0"
-            value={suiAmount}
-            onChange={(e) => setSuiAmount(e.target.value)}
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Available: {(Number(suiBalance) / 1e9).toFixed(4)} SUI
-          </p>
-          <p className="text-xs text-green-500 mt-1">
-            ✅ Deposit only SUI - no DEEP tokens required!
-          </p>
-        </div>
-      ) : (
-        /* Dual Token Mode - Two Inputs */
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">SUI Amount</label>
-            <input
-              type="number"
-              step="0.01"
-              className="input"
-              placeholder="1.0"
-              value={suiAmount}
-              onChange={(e) => setSuiAmount(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Available: {(Number(suiBalance) / 1e9).toFixed(4)} SUI
-            </p>
-          </div>
-
-          <div>
-            <label className="label">DEEP Amount</label>
-            <input
-              type="number"
-              step="0.01"
-              className="input"
-              placeholder="1.0"
-              value={tokenAmount}
-              onChange={(e) => setTokenAmount(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Available: {(Number(tokenBalance) / 1e9).toFixed(4)} DEEP
-            </p>
-          </div>
-        </div>
-      )}
 
       <button
         className="btn btn-success w-full"
@@ -237,7 +189,7 @@ export function DepositLiquidity() {
       </button>
 
       <p className="text-xs text-gray-400">
-        💡 Coins will be automatically selected from your wallet
+        💡 Pool accepts only SUI deposits. Tokens are acquired through admin trading.
       </p>
     </div>
   )

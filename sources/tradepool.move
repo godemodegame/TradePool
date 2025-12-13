@@ -219,69 +219,10 @@ module tradepool::tradepool {
 
     // ====== Liquidity Functions ======
 
-    /// Deposit both SUI and TOKEN to provide liquidity
+    /// Deposit SUI to the pool (single-sided liquidity provision)
+    /// Token balance will be acquired through admin trading operations
     /// Returns an LP receipt representing the depositor's share
     public fun deposit<TOKEN>(
-        pool: &mut Pool<TOKEN>,
-        sui_payment: Coin<SUI>,
-        token_payment: Coin<TOKEN>,
-        ctx: &mut TxContext
-    ): LPReceipt {
-        let sui_amount = coin::value(&sui_payment);
-        let token_amount = coin::value(&token_payment);
-
-        assert!(sui_amount > 0 && token_amount > 0, EZeroAmount);
-
-        // Get current pool state
-        let current_sui_balance = balance::value(&pool.sui_balance);
-        let current_token_balance = balance::value(&pool.token_balance);
-        let current_total_shares = pool.total_shares;
-
-        // Calculate shares to mint
-        let shares_to_mint = if (current_total_shares == 0) {
-            // First deposit: geometric mean of amounts
-            sui_amount // Simple 1:1 ratio for first deposit
-        } else {
-            // Subsequent deposits: maintain pool ratio
-            let sui_shares = (sui_amount * current_total_shares) / current_sui_balance;
-            let token_shares = (token_amount * current_total_shares) / current_token_balance;
-            // Take minimum to maintain pool ratio
-            if (sui_shares < token_shares) { sui_shares } else { token_shares }
-        };
-
-        // Add liquidity to pool
-        balance::join(&mut pool.sui_balance, coin::into_balance(sui_payment));
-        balance::join(&mut pool.token_balance, coin::into_balance(token_payment));
-        pool.total_shares = pool.total_shares + shares_to_mint;
-
-        // Get updated balances for event
-        let new_sui_balance = balance::value(&pool.sui_balance);
-        let new_token_balance = balance::value(&pool.token_balance);
-
-        // Emit event
-        event::emit(DepositEvent {
-            pool_id: object::uid_to_inner(&pool.id),
-            depositor: ctx.sender(),
-            sui_amount,
-            token_amount,
-            shares_minted: shares_to_mint,
-            pool_sui_balance: new_sui_balance,
-            pool_token_balance: new_token_balance,
-            pool_total_shares: pool.total_shares,
-        });
-
-        // Create and return LP receipt
-        LPReceipt {
-            id: object::new(ctx),
-            pool_id: object::uid_to_inner(&pool.id),
-            token_type: type_name::get<TOKEN>(),
-            shares: shares_to_mint,
-        }
-    }
-
-    /// Deposit only SUI to the pool (single-sided liquidity provision)
-    /// Token balance will be 0 until admin trades or other users deposit tokens
-    public fun deposit_sui_only<TOKEN>(
         pool: &mut Pool<TOKEN>,
         sui_coin: Coin<SUI>,
         ctx: &mut TxContext
