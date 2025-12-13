@@ -26,6 +26,11 @@ module tradepool::tradepool {
     use std::string::{Self, String};
     use std::type_name::{Self, TypeName};
 
+    // Momentum DEX imports
+    use mmt_v3::pool::{Pool as MomentumPool};
+    use mmt_v3::trade;
+    use mmt_v3::version::{Version};
+
     // ====== Error Constants ======
     const EZeroAmount: u64 = 0;
     const EPoolNotFound: u64 = 1;
@@ -301,113 +306,185 @@ module tradepool::tradepool {
     // ====== Admin Trading Functions ======
 
     /// Admin function to buy TOKEN with SUI via Momentum DEX
-    /// 
-    /// Note: This function uses Momentum DEX flash swap pattern.
-    /// The swap is executed via Programmable Transaction Blocks (PTB).
-    /// 
-    /// See PTB composition example in CLAUDE.md for client-side integration.
+    ///
+    /// Executes a flash swap on Momentum DEX to trade SUI for TOKEN.
+    /// Uses Momentum's CLMM (Concentrated Liquidity Market Maker) for optimal pricing.
+    ///
+    /// Parameters:
+    /// - momentum_pool: Mutable reference to the Momentum CLMM pool for SUI/TOKEN pair
+    /// - sqrt_price_limit: Maximum sqrt price (use 0 for no limit, or calculate via TickMath)
+    /// - clock: Sui Clock for timestamp validation
+    /// - version: Momentum version object for protocol validation
     public fun admin_buy_token<TOKEN>(
         _admin_cap: &AdminCap,
         pool: &mut Pool<TOKEN>,
+        momentum_pool: &mut MomentumPool<SUI, TOKEN>,
         sui_payment: Coin<SUI>,
         min_token_out: u64,
+        sqrt_price_limit: u128,
+        clock: &Clock,
+        version: &Version,
         ctx: &mut TxContext
     ): Coin<TOKEN> {
         let sui_amount = coin::value(&sui_payment);
         assert!(sui_amount > 0, EZeroAmount);
 
-        let pool_token = balance::value(&pool.token_balance);
-        assert!(pool_token > 0, EInsufficientBalance);
+        // Execute flash swap on Momentum DEX
+        // is_x_to_y = true (SUI -> TOKEN)
+        // exact_input = true (we know exactly how much SUI we're trading)
+        let (balance_sui_out, balance_token_out, flash_receipt) = trade::flash_swap<SUI, TOKEN>(
+            momentum_pool,
+            true,           // is_x_to_y: trading SUI (X) for TOKEN (Y)
+            true,           // exact_input: we specify exact SUI amount
+            sui_amount,     // amount_specified
+            sqrt_price_limit,
+            clock,
+            version,
+            ctx,
+        );
 
-        // NOTE: Actual Momentum DEX swap should be done via PTB from client side
-        // This is a placeholder that uses constant product formula
-        // 
-        // For production, compose this function with Momentum flash_swap in a PTB:
-        // 1. Call admin_buy_token to prepare SUI
-        // 2. Call mmt_v3::trade::flash_swap with the SUI
-        // 3. Call mmt_v3::trade::repay_flash_swap to complete
-        //
-        // See CLAUDE.md for detailed PTB examples
-        
-        let pool_sui = balance::value(&pool.sui_balance);
-        let token_out = (sui_amount * pool_token) / (pool_sui + sui_amount);
+        // Get the debt amounts from the flash swap receipt
+        let (sui_debt, _token_debt) = trade::swap_receipt_debts(&flash_receipt);
 
-        assert!(token_out >= min_token_out, ESlippageExceeded);
-        assert!(token_out <= pool_token, EInsufficientBalance);
+        // Verify we got enough tokens (slippage protection)
+        let token_received = balance::value(&balance_token_out);
+        assert!(token_received >= min_token_out, ESlippageExceeded);
 
-        // Add SUI to pool
-        balance::join(&mut pool.sui_balance, coin::into_balance(sui_payment));
+        // Prepare repayment: we owe SUI debt
+        let mut sui_to_repay = coin::into_balance(sui_payment);
 
-        // Take TOKEN from pool
-        let token_balance = balance::split(&mut pool.token_balance, token_out);
+        // If there's any excess SUI (shouldn't happen with exact_input), add to pool
+        let sui_balance_value = balance::value(&sui_to_repay);
+        if (sui_balance_value > sui_debt) {
+            let excess = balance::split(&mut sui_to_repay, sui_balance_value - sui_debt);
+            balance::join(&mut pool.sui_balance, excess);
+        };
+
+        // Create empty token balance for repayment (we don't owe tokens in X->Y swap)
+        let empty_token_balance = balance::zero<TOKEN>();
+
+        // Repay the flash swap
+        trade::repay_flash_swap<SUI, TOKEN>(
+            momentum_pool,
+            flash_receipt,
+            sui_to_repay,
+            empty_token_balance,
+            version,
+            ctx,
+        );
+
+        // Handle the SUI balance returned from flash swap (should be empty for exact input)
+        balance::destroy_zero(balance_sui_out);
+
+        // Add received tokens to our pool's reserves
+        let token_amount = balance::value(&balance_token_out);
+        balance::join(&mut pool.token_balance, balance_token_out);
 
         // Emit event
         event::emit(TradeExecutedEvent {
             pool_id: object::uid_to_inner(&pool.id),
             trader: ctx.sender(),
             sui_amount_in: sui_amount,
-            token_amount_out: token_out,
+            token_amount_out: token_amount,
             direction: string::utf8(b"buy"),
             pool_sui_balance: balance::value(&pool.sui_balance),
             pool_token_balance: balance::value(&pool.token_balance),
         });
 
-        coin::from_balance(token_balance, ctx)
+        // Return the tokens as a coin to the admin
+        let token_to_return = balance::split(&mut pool.token_balance, token_amount);
+        coin::from_balance(token_to_return, ctx)
     }
 
     /// Admin function to sell TOKEN for SUI via Momentum DEX
     ///
-    /// Note: This function uses Momentum DEX flash swap pattern.
-    /// The swap is executed via Programmable Transaction Blocks (PTB).
-    /// 
-    /// See PTB composition example in CLAUDE.md for client-side integration.
+    /// Executes a flash swap on Momentum DEX to trade TOKEN for SUI.
+    /// Uses Momentum's CLMM (Concentrated Liquidity Market Maker) for optimal pricing.
+    ///
+    /// Parameters:
+    /// - momentum_pool: Mutable reference to the Momentum CLMM pool for SUI/TOKEN pair
+    /// - sqrt_price_limit: Minimum sqrt price (use max u128 for no limit, or calculate via TickMath)
+    /// - clock: Sui Clock for timestamp validation
+    /// - version: Momentum version object for protocol validation
     public fun admin_sell_token<TOKEN>(
         _admin_cap: &AdminCap,
         pool: &mut Pool<TOKEN>,
+        momentum_pool: &mut MomentumPool<SUI, TOKEN>,
         token_payment: Coin<TOKEN>,
         min_sui_out: u64,
+        sqrt_price_limit: u128,
+        clock: &Clock,
+        version: &Version,
         ctx: &mut TxContext
     ): Coin<SUI> {
         let token_amount = coin::value(&token_payment);
         assert!(token_amount > 0, EZeroAmount);
 
-        let pool_sui = balance::value(&pool.sui_balance);
-        assert!(pool_sui > 0, EInsufficientBalance);
+        // Execute flash swap on Momentum DEX
+        // is_x_to_y = false (TOKEN -> SUI, i.e., Y -> X)
+        // exact_input = true (we know exactly how much TOKEN we're trading)
+        let (balance_sui_out, balance_token_out, flash_receipt) = trade::flash_swap<SUI, TOKEN>(
+            momentum_pool,
+            false,          // is_x_to_y: trading TOKEN (Y) for SUI (X)
+            true,           // exact_input: we specify exact TOKEN amount
+            token_amount,   // amount_specified
+            sqrt_price_limit,
+            clock,
+            version,
+            ctx,
+        );
 
-        // NOTE: Actual Momentum DEX swap should be done via PTB from client side
-        // This is a placeholder that uses constant product formula
-        //
-        // For production, compose this function with Momentum flash_swap in a PTB:
-        // 1. Call admin_sell_token to prepare TOKEN
-        // 2. Call mmt_v3::trade::flash_swap with the TOKEN
-        // 3. Call mmt_v3::trade::repay_flash_swap to complete
-        //
-        // See CLAUDE.md for detailed PTB examples
-        
-        let pool_token = balance::value(&pool.token_balance);
-        let sui_out = (token_amount * pool_sui) / (pool_token + token_amount);
+        // Get the debt amounts from the flash swap receipt
+        let (_sui_debt, token_debt) = trade::swap_receipt_debts(&flash_receipt);
 
-        assert!(sui_out >= min_sui_out, ESlippageExceeded);
-        assert!(sui_out <= pool_sui, EInsufficientBalance);
+        // Verify we got enough SUI (slippage protection)
+        let sui_received = balance::value(&balance_sui_out);
+        assert!(sui_received >= min_sui_out, ESlippageExceeded);
 
-        // Add TOKEN to pool
-        balance::join(&mut pool.token_balance, coin::into_balance(token_payment));
+        // Prepare repayment: we owe TOKEN debt
+        let mut token_to_repay = coin::into_balance(token_payment);
 
-        // Take SUI from pool
-        let sui_balance = balance::split(&mut pool.sui_balance, sui_out);
+        // If there's any excess TOKEN (shouldn't happen with exact_input), add to pool
+        let token_balance_value = balance::value(&token_to_repay);
+        if (token_balance_value > token_debt) {
+            let excess = balance::split(&mut token_to_repay, token_balance_value - token_debt);
+            balance::join(&mut pool.token_balance, excess);
+        };
+
+        // Create empty SUI balance for repayment (we don't owe SUI in Y->X swap)
+        let empty_sui_balance = balance::zero<SUI>();
+
+        // Repay the flash swap
+        trade::repay_flash_swap<SUI, TOKEN>(
+            momentum_pool,
+            flash_receipt,
+            empty_sui_balance,
+            token_to_repay,
+            version,
+            ctx,
+        );
+
+        // Handle the TOKEN balance returned from flash swap (should be empty for exact input)
+        balance::destroy_zero(balance_token_out);
+
+        // Add received SUI to our pool's reserves
+        let sui_amount = balance::value(&balance_sui_out);
+        balance::join(&mut pool.sui_balance, balance_sui_out);
 
         // Emit event
         event::emit(TradeExecutedEvent {
             pool_id: object::uid_to_inner(&pool.id),
             trader: ctx.sender(),
-            sui_amount_in: sui_out,
+            sui_amount_in: sui_amount,
             token_amount_out: token_amount,
             direction: string::utf8(b"sell"),
             pool_sui_balance: balance::value(&pool.sui_balance),
             pool_token_balance: balance::value(&pool.token_balance),
         });
 
-        coin::from_balance(sui_balance, ctx)
+        // Return the SUI as a coin to the admin
+        let sui_to_return = balance::split(&mut pool.sui_balance, sui_amount);
+        coin::from_balance(sui_to_return, ctx)
     }
 
     // ====== View Functions ======

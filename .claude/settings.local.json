@@ -4,7 +4,9 @@
       "Bash(sui move test:*)",
       "Bash(sui move build:*)",
       "WebSearch",
-      "WebFetch(domain:docs.mmt.finance)"
+      "WebFetch(domain:docs.mmt.finance)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
