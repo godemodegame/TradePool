@@ -1,5 +1,12 @@
-import TelegramBot from 'node-telegram-bot-api';
 import dotenv from 'dotenv';
+import path from 'path';
+
+// Load .env file BEFORE importing config
+// In production: dist/src/index.js -> ../../.env (goes to app root)
+// In development: src/index.ts -> ../.env (goes to app root)
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+import TelegramBot from 'node-telegram-bot-api';
 import { config, validateConfig } from '../config';
 import { database } from './database';
 import logger from './utils/logger';
@@ -12,8 +19,6 @@ import { registerLiquidityCommands } from './commands/liquidity.command';
 import { registerTradeCommands } from './commands/trade.command';
 import { registerHistoryCommand } from './commands/history.command';
 import { registerSettingsCommand } from './commands/settings.command';
-
-dotenv.config();
 
 async function main() {
   try {
