@@ -11,7 +11,7 @@ export interface Config {
     adminCapId: string;
   };
   database: {
-    url: string;
+    path: string;
   };
   redis: {
     url: string;
@@ -46,7 +46,7 @@ export const config: Config = {
     adminCapId: process.env.SUI_ADMIN_CAP_ID || '',
   },
   database: {
-    url: process.env.DATABASE_URL || '',
+    path: process.env.DATABASE_PATH || './data/tradepool.db',
   },
   redis: {
     url: process.env.REDIS_URL || 'redis://localhost:6379',
@@ -64,7 +64,7 @@ export const config: Config = {
     baseUrl: process.env.EXPLORER_BASE_URL || 'https://suiscan.xyz/testnet/tx/',
   },
   coingecko: {
-    apiKey: process.env.COINGECKO_API_KEY,
+    apiKey: process.env.COINGECKO_API_KEY || '',
   },
 };
 
@@ -73,7 +73,7 @@ export function validateConfig(): void {
     'telegram.botToken',
     'sui.packageId',
     'sui.registryId',
-    'database.url',
+    'database.path',
     'security.encryptionKey',
   ];
 

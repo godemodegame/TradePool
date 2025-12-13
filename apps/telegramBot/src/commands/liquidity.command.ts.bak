@@ -3,6 +3,7 @@ import { authMiddleware, errorHandler } from '../middleware';
 import { suiService } from '../services/sui.service';
 import { walletService } from '../services/wallet.service';
 import { database } from '../database';
+import { generateConfirmCode } from '../utils/crypto';
 import { formatSuiAmount, parseSuiAmount } from '../utils/formatting';
 import logger from '../utils/logger';
 

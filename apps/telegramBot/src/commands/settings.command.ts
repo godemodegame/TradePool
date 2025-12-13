@@ -72,8 +72,8 @@ export function registerSettingsCommand(bot: TelegramBot): void {
 
         await database.updateUserSettings(userId, {
           notifications: {
-            ...user?.settings?.notifications,
             trades: !currentValue,
+            price_alerts: user?.settings?.notifications?.price_alerts ?? true,
           },
         });
 
@@ -89,7 +89,7 @@ export function registerSettingsCommand(bot: TelegramBot): void {
 
         await database.updateUserSettings(userId, {
           notifications: {
-            ...user?.settings?.notifications,
+            trades: user?.settings?.notifications?.trades ?? true,
             price_alerts: !currentValue,
           },
         });

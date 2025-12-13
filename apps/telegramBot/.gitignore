@@ -12,6 +12,12 @@ build/
 .env.local
 .env.*.local
 
+# Database
+data/
+*.db
+*.db-shm
+*.db-wal
+
 # Logs
 logs/
 *.log

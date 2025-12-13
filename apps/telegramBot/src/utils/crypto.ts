@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import { config } from '../../config';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;

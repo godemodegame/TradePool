@@ -10,7 +10,7 @@ export class WalletService {
     try {
       const mnemonic = bip39.generateMnemonic(128);
       const seed = await bip39.mnemonicToSeed(mnemonic);
-      const keypair = Ed25519Keypair.fromSeed(seed.slice(0, 32));
+      const keypair = Ed25519Keypair.fromSecretKey(seed.slice(0, 32));
       
       const address = keypair.getPublicKey().toSuiAddress();
       const privateKey = keypair.export().privateKey;
@@ -46,7 +46,7 @@ export class WalletService {
       }
 
       const seed = await bip39.mnemonicToSeed(mnemonic);
-      const keypair = Ed25519Keypair.fromSeed(seed.slice(0, 32));
+      const keypair = Ed25519Keypair.fromSecretKey(seed.slice(0, 32));
 
       const address = keypair.getPublicKey().toSuiAddress();
       const privateKey = keypair.export().privateKey;

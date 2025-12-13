@@ -1,4 +1,4 @@
-import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
+import { SuiClient } from '@mysten/sui.js/client';
 import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
 import { fromB64 } from '@mysten/sui.js/utils';
@@ -144,7 +144,7 @@ export class SuiService {
   async buildDepositTransaction(
     poolId: string,
     suiAmount: string,
-    tokenAmount: string,
+    _tokenAmount: string,
     tokenType: string,
     userAddress: string
   ): Promise<TransactionBlock> {
@@ -214,7 +214,7 @@ export class SuiService {
 
   async buildAdminSellTransaction(
     poolId: string,
-    tokenAmount: string,
+    _tokenAmount: string,
     minSuiOut: string,
     tokenType: string,
     userAddress: string
