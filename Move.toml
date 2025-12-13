@@ -5,7 +5,8 @@ edition = "2024.beta" # edition = "legacy" to use legacy (pre-2024) Move
 # authors = ["..."]      # e.g., ["Joe Smith (joesmith@noemail.com)", "John Snow (johnsnow@noemail.com)"]
 
 [dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/mainnet" }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "f63c9fc78e2171fa174dc43e757ded416c204558" }
+mmt_v3 = { git = "https://github.com/mmt-finance/v3-core.git", subdir = "clmm", rev = "main" }
 
 [addresses]
 tradepool = "0x0"

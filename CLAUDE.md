@@ -91,7 +91,7 @@ The project contains two separate pool systems that serve different use cases:
 | **Deposits require** | Both SUI and TOKEN | SUI only |
 | **Withdrawals return** | Both SUI and TOKEN | SUI only |
 | **Trading functions** | ✅ `admin_buy_token`, `admin_sell_token` | ❌ None |
-| **DEX Integration** | ✅ Ready (with TODO guides) | ❌ Not applicable |
+| **DEX Integration** | ✅ Integrated with Momentum v3 | ❌ Not applicable |
 | **Receipt operations** | `merge_receipts`, `split_receipt` | `merge_receipts`, `split_receipt` |
 | **Registry type** | `Table<TypeName, ID>` | `Table<String, ID>` |
 
@@ -125,22 +125,18 @@ token_to_withdraw = (shares × token_balance) ÷ total_shares  // tradepool only
 
 ### Trading Algorithm (tradepool.move only)
 
-Admin trading functions use **constant product formula (x*y=k)**:
+Admin trading functions use **Momentum DEX v3 CLMM** (Concentrated Liquidity Market Maker):
 
-**Buy TOKEN with SUI:**
-```
-token_out = (sui_in × token_reserve) / (sui_reserve + sui_in)
-```
+**Implementation:** Flash swap pattern
+- Executes swaps via `mmt_v3::trade::flash_swap()`
+- Repays debt via `mmt_v3::trade::repay_flash_swap()`
+- Uses exact input model (specify exact amount in, get variable amount out)
+- Atomic execution ensures either full success or full revert
 
-**Sell TOKEN for SUI:**
-```
-sui_out = (token_in × sui_reserve) / (token_reserve + token_in)
-```
-
-> **TODO**: This is a simulation. In production, replace with Momentum DEX calls. See detailed TODO comments at:
-> - `sources/tradepool.move:320-361` (admin_buy_token)
-> - `sources/tradepool.move:411-453` (admin_sell_token)
-> - `MOMENTUM_INTEGRATION.md` for full integration guide
+**Price Discovery:** Determined by Momentum's concentrated liquidity pools
+- More efficient than constant product (x*y=k) formula
+- Capital concentrated around current price for better execution
+- See Momentum documentation for CLMM pricing details
 
 ### Important Implementation Details
 
@@ -242,7 +238,7 @@ Tests are located in `tests/tradepool_tests.move` for the single pool implementa
 ### Extending the Code
 
 **For tradepool.move:**
-- **Momentum Integration**: Follow TODO comments in code and `MOMENTUM_INTEGRATION.md`
+- **Momentum Integration**: ✅ Complete - see `MOMENTUM_INTEGRATION.md` for details
 - **Fees**: Add fee parameter to trading functions, collect fees to treasury
 - **Multi-hop Swaps**: Compose multiple pool swaps in PTB (Programmable Transaction Blocks)
 - **Price Oracles**: Add price feed integration for better slippage protection
@@ -269,25 +265,36 @@ Tests are located in `tests/tradepool_tests.move` for the single pool implementa
 
 ## Momentum DEX Integration
 
-The `tradepool.move` module is **ready for Momentum DEX integration** with detailed TODO comments:
+The `tradepool.move` module is **fully integrated** with Momentum DEX v3 CLMM:
+
+### Integration Status: ✅ COMPLETE
+- ✅ Momentum v3 package added as dependency
+- ✅ Flash swap pattern implemented in `admin_buy_token()`
+- ✅ Flash swap pattern implemented in `admin_sell_token()`
+- ✅ Generic types support any token pairs (SUI/TOKEN)
+- ✅ Slippage protection via `min_token_out` / `min_sui_out`
+- ✅ Price limits via `sqrt_price_limit` parameter
+- ✅ Build successful with Momentum integration
+
+### How It Works
+Both trading functions use Momentum's flash swap mechanism:
+
+1. **Flash Swap**: Call `mmt_v3::trade::flash_swap()` to execute the swap
+2. **Slippage Check**: Verify output meets minimum requirements
+3. **Repay Debt**: Call `mmt_v3::trade::repay_flash_swap()` with payment
+4. **Atomic Execution**: All steps happen in a single transaction
 
 ### Integration Resources
-- **Primary Guide**: `MOMENTUM_INTEGRATION.md` - complete step-by-step integration guide
-- **Code TODOs**:
-  - `sources/tradepool.move:1-34` - Module-level integration overview
-  - `sources/tradepool.move:70-83` - Pool struct modification (add `momentum_pool_id`)
-  - `sources/tradepool.move:320-361` - `admin_buy_token()` integration (60 lines of guidance)
-  - `sources/tradepool.move:411-453` - `admin_sell_token()` integration (40 lines of guidance)
+- **Primary Guide**: `MOMENTUM_INTEGRATION.md` - complete implementation documentation
+- **Dependencies**: See `Move.toml` for Momentum v3 package configuration
+- **Function Signatures**: Both `admin_buy_token()` and `admin_sell_token()` require:
+  - `momentum_pool: &mut MomentumPool<SUI, TOKEN>` - The Momentum CLMM pool
+  - `sqrt_price_limit: u128` - Price bound (0 or max u128 for no limit)
+  - `clock: &Clock` - Sui Clock object (0x6)
+  - `version: &Version` - Momentum Version object
 
-### Current Status
-- ✅ Architecture ready for integration
-- ✅ Generic types support any token pairs
-- ✅ Trading functions with slippage protection
-- ✅ Comprehensive TODO comments with code examples
-- ⏳ Awaiting Momentum SDK/documentation release
-
-### Alternative Approach: PTB
-Instead of on-chain integration, consider using **Programmable Transaction Blocks** from client side to compose TradePool operations with Momentum DEX calls. This provides more flexibility and simpler upgrades.
+### PTB Integration
+You can compose trading functions in Programmable Transaction Blocks from the client side for maximum flexibility. See `MOMENTUM_INTEGRATION.md` for TypeScript examples.
 
 ## Error Codes
 
@@ -342,12 +349,16 @@ let receipt = deposit<USDC>(
 ### Admin Trading (Buy)
 
 ```move
-// Admin buys USDC with SUI from pool
+// Admin buys USDC with SUI via Momentum DEX
 let usdc_received = admin_buy_token<USDC>(
     &admin_cap,
     &mut pool,
-    sui_payment,  // Coin<SUI>
-    1000,         // min USDC out (slippage protection)
+    &mut momentum_pool,  // Momentum CLMM pool
+    sui_payment,         // Coin<SUI>
+    1000,                // min USDC out (slippage protection)
+    0,                   // sqrt_price_limit (0 = no limit)
+    &clock,              // Clock object (0x6)
+    &momentum_version,   // Momentum Version object
     ctx
 );
 ```
@@ -355,12 +366,16 @@ let usdc_received = admin_buy_token<USDC>(
 ### Admin Trading (Sell)
 
 ```move
-// Admin sells USDC for SUI from pool
+// Admin sells USDC for SUI via Momentum DEX
 let sui_received = admin_sell_token<USDC>(
     &admin_cap,
     &mut pool,
-    usdc_payment, // Coin<USDC>
-    5000,         // min SUI out (slippage protection)
+    &mut momentum_pool,  // Momentum CLMM pool
+    usdc_payment,        // Coin<USDC>
+    5000,                // min SUI out (slippage protection)
+    340282366920938463463374607431768211455, // max u128 (no limit)
+    &clock,              // Clock object (0x6)
+    &momentum_version,   // Momentum Version object
     ctx
 );
 ```
@@ -385,5 +400,5 @@ let (sui_coin, usdc_coin) = withdraw<USDC>(
 
 ---
 
-**Last Updated**: 2025-12-12
-**Project Version**: 0.2.0 (with DEX trading integration)
+**Last Updated**: 2025-12-13
+**Project Version**: 0.2.0 (Momentum DEX integrated ✅)

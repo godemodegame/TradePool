@@ -1,134 +1,299 @@
 # Momentum DEX Integration Guide
 
-Этот файл содержит пошаговые инструкции по интеграции TradePool с Momentum DEX.
+## Status: ✅ INTEGRATED
 
-## 📍 Где найти TODO комментарии
+The TradePool module is now fully integrated with Momentum DEX v3 CLMM (Concentrated Liquidity Market Maker) for executing swaps.
 
-Все TODO комментарии находятся в `sources/tradepool.move`:
+## Overview
 
-1. **Строки 1-34**: Общий план интеграции с Momentum
-2. **Строки 70-83**: TODO в структуре `Pool` - добавление `momentum_pool_id`
-3. **Строки 320-361**: Детальный TODO для `admin_buy_token()` функции
-4. **Строки 411-453**: Детальный TODO для `admin_sell_token()` функции
+TradePool uses Momentum's flash swap mechanism to execute trades on behalf of the liquidity pool. The integration allows admin-controlled trading that routes through Momentum's concentrated liquidity pools for optimal pricing.
 
-## 🔧 Шаги интеграции
+## Architecture
 
-### Шаг 1: Добавить зависимости Momentum
+### Flash Swap Pattern
 
-Когда появится официальный репозиторий Momentum, добавьте в `Move.toml`:
+Both `admin_buy_token` and `admin_sell_token` functions use Momentum's flash swap pattern:
+
+1. **Initiate Flash Swap**: Call `mmt_v3::trade::flash_swap()` to borrow tokens
+2. **Receive Assets**: Get borrowed balance and a flash receipt documenting the debt
+3. **Repay Debt**: Call `mmt_v3::trade::repay_flash_swap()` with the required repayment
+4. **Complete**: Transaction succeeds if debt is fully repaid
+
+### Dependencies
+
+The integration requires the Momentum v3 CLMM package:
 
 ```toml
 [dependencies]
-Momentum = { git = "https://github.com/momentum-dex/contracts.git", subdir = "momentum", rev = "main" }
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "f63c9fc78e2171fa174dc43e757ded416c204558" }
+mmt_v3 = { git = "https://github.com/mmt-finance/v3-core.git", subdir = "clmm", rev = "main" }
+
+[addresses]
+tradepool = "0x0"
+mmt_v3 = "0x70285592c97965e811e0c6f98dccc3a9c2b4ad854b3594faab9597ada267b860"
 ```
 
-### Шаг 2: Импортировать модули Momentum
+**Note**: Both packages must use the same Sui framework revision to avoid dependency conflicts.
 
-В начало `sources/tradepool.move` добавьте:
+### Module Imports
 
 ```move
-use momentum::pool::{Self as momentum_pool, Pool as MomentumPool};
-use momentum::router::{Self as momentum_router};
+// Momentum DEX imports
+use mmt_v3::pool::{Pool as MomentumPool};
+use mmt_v3::trade;
+use mmt_v3::version::{Version};
 ```
 
-### Шаг 3: Обновить структуру Pool
+## Function Implementations
 
-Добавьте поле для хранения ID Momentum пула (см. TODO в строке 79):
+### admin_buy_token (SUI → TOKEN)
 
+Buys TOKEN using SUI via Momentum DEX.
+
+**Function Signature:**
 ```move
-public struct Pool<phantom TOKEN> has key {
-    id: UID,
-    name: String,
-    sui_balance: Balance<SUI>,
-    token_balance: Balance<TOKEN>,
-    total_shares: u64,
-    momentum_pool_id: ID,  // <-- ДОБАВИТЬ
-}
-```
-
-### Шаг 4: Обновить create_pool()
-
-Добавьте параметр `momentum_pool_id`:
-
-```move
-public fun create_pool<TOKEN>(
+public fun admin_buy_token<TOKEN>(
     _admin_cap: &AdminCap,
-    registry: &mut PoolRegistry,
-    name: vector<u8>,
-    momentum_pool_id: ID,  // <-- ДОБАВИТЬ
+    pool: &mut Pool<TOKEN>,
+    momentum_pool: &mut MomentumPool<SUI, TOKEN>,
+    sui_payment: Coin<SUI>,
+    min_token_out: u64,
+    sqrt_price_limit: u128,
+    clock: &Clock,
+    version: &Version,
     ctx: &mut TxContext
-)
+): Coin<TOKEN>
 ```
 
-### Шаг 5: Заменить логику swap
+**How It Works:**
 
-Найдите секции `// ==================== TODO: REPLACE THIS SECTION ====================` в:
+1. **Flash Swap**: Execute `trade::flash_swap<SUI, TOKEN>()` with:
+   - `is_x_to_y = true` (SUI is X, TOKEN is Y)
+   - `exact_input = true` (exact SUI amount specified)
+   - Returns `(Balance<SUI>, Balance<TOKEN>, FlashSwapReceipt)`
 
-- `admin_buy_token()` (строка 375-389)
-- `admin_sell_token()` (строка 467-481)
+2. **Slippage Check**: Verify `token_received >= min_token_out`
 
-Замените на вызовы Momentum API (см. детальные инструкции в комментариях).
+3. **Repayment**: Pay back SUI debt using the `sui_payment` coin
+   - Excess SUI (if any) is added to the pool reserves
 
-## 🔍 Альтернативный подход: PTB (Рекомендуется)
+4. **Receipt Cleanup**: Repay the flash swap, destroy empty balances
 
-Вместо прямой интеграции в контракте, можно использовать **Programmable Transaction Blocks** на стороне клиента:
+5. **Returns**: TOKEN coins to the admin
+
+### admin_sell_token (TOKEN → SUI)
+
+Sells TOKEN for SUI via Momentum DEX.
+
+**Function Signature:**
+```move
+public fun admin_sell_token<TOKEN>(
+    _admin_cap: &AdminCap,
+    pool: &mut Pool<TOKEN>,
+    momentum_pool: &mut MomentumPool<SUI, TOKEN>,
+    token_payment: Coin<TOKEN>,
+    min_sui_out: u64,
+    sqrt_price_limit: u128,
+    clock: &Clock,
+    version: &Version,
+    ctx: &mut TxContext
+): Coin<SUI>
+```
+
+**How It Works:**
+
+1. **Flash Swap**: Execute `trade::flash_swap<SUI, TOKEN>()` with:
+   - `is_x_to_y = false` (TOKEN is Y, SUI is X - reverse direction)
+   - `exact_input = true` (exact TOKEN amount specified)
+   - Returns `(Balance<SUI>, Balance<TOKEN>, FlashSwapReceipt)`
+
+2. **Slippage Check**: Verify `sui_received >= min_sui_out`
+
+3. **Repayment**: Pay back TOKEN debt using the `token_payment` coin
+   - Excess TOKEN (if any) is added to the pool reserves
+
+4. **Receipt Cleanup**: Repay the flash swap, destroy empty balances
+
+5. **Returns**: SUI coins to the admin
+
+## Usage Example
+
+### Creating a Pool with Momentum Integration
+
+```move
+// Admin creates a SUI/USDC pool linked to Momentum
+create_pool<USDC>(
+    &admin_cap,
+    &mut registry,
+    b"SUI-USDC",
+    momentum_pool_id,  // ID of the Momentum CLMM pool for SUI/USDC
+    ctx
+);
+```
+
+### Executing a Buy Trade
+
+```move
+// Admin buys USDC with 1000 SUI
+let usdc_received = admin_buy_token<USDC>(
+    &admin_cap,
+    &mut tradepool,
+    &mut momentum_pool,     // Shared Momentum pool object
+    sui_coin,               // 1000 SUI
+    950,                    // min 950 USDC out (5% slippage tolerance)
+    0,                      // sqrt_price_limit: 0 = no limit
+    &clock,                 // Sui Clock object
+    &momentum_version,      // Momentum Version object
+    ctx
+);
+```
+
+### Executing a Sell Trade
+
+```move
+// Admin sells 500 USDC for SUI
+let sui_received = admin_sell_token<USDC>(
+    &admin_cap,
+    &mut tradepool,
+    &mut momentum_pool,
+    usdc_coin,              // 500 USDC
+    450,                    // min 450 SUI out
+    340282366920938463463374607431768211455, // max u128 = no limit
+    &clock,
+    &momentum_version,
+    ctx
+);
+```
+
+## Important Parameters
+
+### sqrt_price_limit
+
+Controls price bounds for the swap:
+
+- **For buying (X→Y)**: Lower limit prevents buying at too high a price
+  - Use `0` for no limit, or calculate via `TickMath.priceToSqrtPriceX64(minPrice, decimalsX, decimalsY)`
+
+- **For selling (Y→X)**: Upper limit prevents selling at too low a price
+  - Use `max u128` (340282366920938463463374607431768211455) for no limit
+
+### Momentum Version Object
+
+The `Version` object is a shared object provided by Momentum for protocol versioning. You need to pass it to all trading functions.
+
+### Clock Object
+
+Sui's `Clock` object is required for timestamp validation in Momentum swaps. Use `0x6` for the shared Clock object.
+
+## PTB Integration Pattern
+
+For client-side integrations, you can compose Momentum swaps with TradePool operations in a Programmable Transaction Block:
 
 ```typescript
-// Пример PTB композиции (TypeScript SDK)
-const tx = new TransactionBlock();
+import { Transaction } from '@mysten/sui/transactions';
 
-// 1. Вызвать admin_buy_token (берем SUI из пула)
+const tx = new Transaction();
+
+// 1. Buy token via TradePool + Momentum
 const [tokenOut] = tx.moveCall({
-  target: `${PACKAGE_ID}::tradepool::admin_buy_token`,
-  arguments: [tx.object(ADMIN_CAP), tx.object(POOL), tx.object(SUI_COIN), tx.pure(MIN_OUT)],
+  target: `${TRADEPOOL_PACKAGE}::tradepool::admin_buy_token`,
+  arguments: [
+    tx.object(ADMIN_CAP),
+    tx.object(TRADEPOOL),
+    tx.object(MOMENTUM_POOL),
+    tx.object(SUI_COIN),
+    tx.pure(MIN_TOKEN_OUT),
+    tx.pure(SQRT_PRICE_LIMIT),
+    tx.object('0x6'), // Clock
+    tx.object(MOMENTUM_VERSION),
+  ],
   typeArguments: [TOKEN_TYPE],
 });
 
-// 2. Немедленно использовать tokenOut для вызова Momentum swap
-const [swapResult] = tx.moveCall({
-  target: `${MOMENTUM_PACKAGE}::router::swap`,
-  arguments: [tx.object(MOMENTUM_POOL), tokenOut, tx.pure(MIN_AMOUNT)],
-  typeArguments: [SUI, TOKEN],
-});
-
-// 3. Положить результат обратно в пул
-tx.moveCall({
-  target: `${PACKAGE_ID}::tradepool::deposit`,
-  arguments: [tx.object(POOL), swapResult.sui, swapResult.token],
-  typeArguments: [TOKEN_TYPE],
-});
+// 2. Use tokenOut in subsequent operations...
 ```
 
-## 📚 Ресурсы
+## Security Considerations
 
-- **Momentum Whitepaper**: https://docs.mmt.finance
-- **Sui PTB Documentation**: https://docs.sui.io/concepts/transactions/programmable-transaction-blocks
-- **Move Language**: https://move-language.github.io/move/
+1. **Slippage Protection**: Always set reasonable `min_token_out` / `min_sui_out` values
+   - Prevents sandwich attacks and MEV exploitation
+   - Calculate based on oracle prices or recent swap data
 
-## ⚠️ Важные замечания
+2. **Access Control**: Only `AdminCap` holder can execute trades
+   - Consider DAO governance for production deployments
+   - Implement timelocks for large trades
 
-1. **Точные имена функций** Momentum могут отличаться - проверьте их SDK
-2. **Комиссии**: Momentum может взимать комиссии - учтите это в расчетах
-3. **Slippage protection**: Всегда используйте `min_amount_out` параметр
-4. **Тестирование**: Тестируйте на testnet перед деплоем в mainnet
-5. **Audits**: Momentum - крупный DEX, но всегда проводите аудит вашего кода
+3. **Price Limits**: Use `sqrt_price_limit` to prevent extreme price movements
+   - Especially important for low-liquidity pools
 
-## 🚀 Текущий статус
+4. **Flash Swap Atomicity**: All operations happen in a single transaction
+   - Either the entire swap succeeds or reverts
+   - No partial executions or stuck states
 
-✅ Архитектура готова для интеграции
-✅ TODO комментарии добавлены во всех нужных местах
-✅ Generic типы поддерживают любые токены
-✅ События отслеживания настроены
-⏳ Ожидается документация Momentum API
+## Testing
 
-## 📞 Что делать дальше
+Build and test the integration:
 
-1. Следите за релизом Momentum SDK/документации
-2. Когда появится - следуйте TODO в коде (строки 320-361, 411-453)
-3. Тестируйте интеграцию на testnet
-4. Проведите security audit перед mainnet
+```bash
+# Build the package
+sui move build
+
+# Run tests (update tests to include Momentum integration)
+sui move test
+
+# Deploy to testnet first
+sui client publish --gas-budget 100000000
+```
+
+## Resources
+
+- **Momentum Developer Docs**: https://docs.mmt.finance/core-products/momentum-dex/developers
+- **Momentum v3 Core**: https://github.com/mmt-finance/v3-core
+- **Momentum SDK**: https://github.com/mmt-finance/clmm-sdk
+- **Sui PTB Guide**: https://docs.sui.io/concepts/transactions/programmable-transaction-blocks
+- **Move Registry**: https://www.moveregistry.com/package/@mmt/clmm-core
+
+## Troubleshooting
+
+### Dependency Conflicts
+
+If you see "conflicting versions of package MoveStdlib":
+- Ensure both `Sui` and `mmt_v3` dependencies use the same framework revision
+- Check the Momentum package's `Move.toml` for their Sui framework version
+- Update your `Move.toml` to match
+
+### Build Errors
+
+If modules are not found:
+- Verify `mmt_v3` is in both `[dependencies]` and `[addresses]` sections
+- Check that the git repository and subdir path are correct
+- Ensure you're using the correct branch/revision
+
+### Runtime Errors
+
+If swaps fail at runtime:
+- Verify the Momentum pool exists and has liquidity
+- Check that the `momentum_pool_id` matches the actual pool
+- Ensure you're passing the correct `Version` object
+- Validate that slippage parameters are reasonable
+
+## Changelog
+
+### v0.2.0 - 2025-12-13
+- ✅ Integrated Momentum DEX flash swap functionality
+- ✅ Updated `admin_buy_token` with flash swap implementation
+- ✅ Updated `admin_sell_token` with flash swap implementation
+- ✅ Added Momentum dependencies to `Move.toml`
+- ✅ Successful build with Momentum integration
+- ✅ Removed placeholder constant product formula
+
+### v0.1.0 - 2025-12-12
+- Initial architecture design
+- Placeholder swap functions with constant product formula
+- Generic pool structure supporting any SUI/TOKEN pair
 
 ---
 
-**Последнее обновление**: 2025-12-12
-**Контакты Momentum**: https://twitter.com/momentum_dex (проверьте актуальные ссылки)
+**Last Updated**: 2025-12-13
+**Integration Status**: Complete ✅
+**Tested**: Build successful, runtime testing pending

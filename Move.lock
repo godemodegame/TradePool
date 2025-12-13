@@ -2,22 +2,53 @@
 
 [move]
 version = 3
-manifest_digest = "4D20D875266454854C5F7F7C009B77FAFB7CBB5944BC5A8A17F1AEF5A16F7DD3"
-deps_digest = "F8BBB0CCB2491CA29A3DF03D6F92277A4F3574266507ACD77214D37ECA3F3082"
+manifest_digest = "90A3F3ABC3D925F443D62318B42490A480BF6973380EEAC87009B937ED1B5DD9"
+deps_digest = "3C4103934B1E040BB6B23F1D610B4EF9F2F1166A50A104EADCF77467C004C600"
 dependencies = [
   { id = "Sui", name = "Sui" },
+  { id = "mmt_v3", name = "mmt_v3" },
+]
+
+[[move.package]]
+id = "Bridge"
+source = { git = "https://github.com/MystenLabs/sui.git", rev = "f63c9fc78e2171fa174dc43e757ded416c204558", subdir = "crates/sui-framework/packages/bridge" }
+
+dependencies = [
+  { id = "MoveStdlib", name = "MoveStdlib" },
+  { id = "Sui", name = "Sui" },
+  { id = "SuiSystem", name = "SuiSystem" },
 ]
 
 [[move.package]]
 id = "MoveStdlib"
-source = { git = "https://github.com/MystenLabs/sui.git", rev = "framework/mainnet", subdir = "crates/sui-framework/packages/move-stdlib" }
+source = { git = "https://github.com/MystenLabs/sui.git", rev = "f63c9fc78e2171fa174dc43e757ded416c204558", subdir = "crates/sui-framework/packages/move-stdlib" }
 
 [[move.package]]
 id = "Sui"
-source = { git = "https://github.com/MystenLabs/sui.git", rev = "framework/mainnet", subdir = "crates/sui-framework/packages/sui-framework" }
+source = { git = "https://github.com/MystenLabs/sui.git", rev = "f63c9fc78e2171fa174dc43e757ded416c204558", subdir = "crates/sui-framework/packages/sui-framework" }
 
 dependencies = [
   { id = "MoveStdlib", name = "MoveStdlib" },
+]
+
+[[move.package]]
+id = "SuiSystem"
+source = { git = "https://github.com/MystenLabs/sui.git", rev = "f63c9fc78e2171fa174dc43e757ded416c204558", subdir = "crates/sui-framework/packages/sui-system" }
+
+dependencies = [
+  { id = "MoveStdlib", name = "MoveStdlib" },
+  { id = "Sui", name = "Sui" },
+]
+
+[[move.package]]
+id = "mmt_v3"
+source = { git = "https://github.com/mmt-finance/v3-core.git", rev = "main", subdir = "clmm" }
+
+dependencies = [
+  { id = "Bridge", name = "Bridge" },
+  { id = "MoveStdlib", name = "MoveStdlib" },
+  { id = "Sui", name = "Sui" },
+  { id = "SuiSystem", name = "SuiSystem" },
 ]
 
 [move.toolchain-version]
