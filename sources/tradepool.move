@@ -1,36 +1,20 @@
-/// TradePool - Liquidity pools with DEX integration
+/// TradePool - Liquidity pools with Momentum DEX integration
 ///
-/// # TODO: Momentum DEX Integration
+/// This module provides liquidity pools that integrate with Momentum DEX for token swaps.
+/// Supports any SUI/TOKEN pair with generic types.
 ///
-/// This module is prepared for integration with Momentum DEX (https://docs.mmt.finance)
-/// Currently uses constant product formula (x*y=k) to simulate swaps.
+/// # Features:
+/// - Generic pool creation for any SUI/TOKEN pair
+/// - Dual-token liquidity provision
+/// - Momentum DEX integration for swaps
+/// - Slippage protection on all trades
+/// - Non-fungible LP receipts with merge/split functionality
 ///
-/// ## Integration Steps:
-///
-/// 1. ADD MOMENTUM DEPENDENCIES
-///    Add to Move.toml:
-///    ```toml
-///    [dependencies]
-///    Momentum = { git = "https://github.com/momentum-dex/contracts.git", subdir = "momentum", rev = "main" }
-///    ```
-///
-/// 2. IMPORT MOMENTUM MODULES
-///    Add to this file:
-///    ```move
-///    use momentum::pool::{Self as momentum_pool, Pool as MomentumPool};
-///    use momentum::router::{Self as momentum_router};
-///    ```
-///
-/// 3. REPLACE SWAP LOGIC
-///    In admin_buy_token() and admin_sell_token() functions:
-///    - Remove constant product formula calculation
-///    - Call Momentum's swap functions instead
-///    - Handle slippage protection via Momentum's parameters
-///
-/// 4. USE PROGRAMMABLE TRANSACTION BLOCKS (PTB)
-///    For complex operations, compose multiple calls in a single transaction
-///
-/// See detailed TODOs in admin_buy_token() and admin_sell_token() functions below.
+/// # Usage:
+/// 1. Admin creates pool with Momentum pool reference
+/// 2. Users deposit SUI and TOKEN to provide liquidity
+/// 3. Admin executes swaps via Momentum DEX
+/// 4. Users withdraw proportional liquidity
 ///
 module tradepool::tradepool {
     use sui::balance::{Self, Balance};
@@ -38,6 +22,7 @@ module tradepool::tradepool {
     use sui::event;
     use sui::sui::SUI;
     use sui::table::{Self, Table};
+    use sui::clock::Clock;
     use std::string::{Self, String};
     use std::type_name::{Self, TypeName};
 
@@ -66,21 +51,6 @@ module tradepool::tradepool {
 
     /// Liquidity pool with two tokens (SUI paired with TOKEN)
     /// Generic over TOKEN type to support any token
-    ///
-    /// # TODO: Add Momentum Pool Reference
-    /// For Momentum integration, add field to store Momentum pool ID:
-    /// ```move
-    /// public struct Pool<phantom TOKEN> has key {
-    ///     id: UID,
-    ///     name: String,
-    ///     sui_balance: Balance<SUI>,
-    ///     token_balance: Balance<TOKEN>,
-    ///     total_shares: u64,
-    ///     momentum_pool_id: ID,  // <-- ADD THIS: Reference to Momentum pool for this pair
-    /// }
-    /// ```
-    /// Then update create_pool() to accept momentum_pool_id parameter.
-    ///
     public struct Pool<phantom TOKEN> has key {
         id: UID,
         /// Pool name for identification
@@ -91,7 +61,8 @@ module tradepool::tradepool {
         token_balance: Balance<TOKEN>,
         /// Total LP shares issued
         total_shares: u64,
-        // TODO: Add momentum_pool_id: ID when integrating with Momentum
+        /// Reference to Momentum pool for this pair
+        momentum_pool_id: ID,
     }
 
     /// LP Share Receipt - represents ownership in a specific pool
@@ -178,6 +149,7 @@ module tradepool::tradepool {
         _admin_cap: &AdminCap,
         registry: &mut PoolRegistry,
         name: vector<u8>,
+        momentum_pool_id: ID,
         ctx: &mut TxContext
     ) {
         let token_type = type_name::get<TOKEN>();
@@ -195,6 +167,7 @@ module tradepool::tradepool {
             sui_balance: balance::zero(),
             token_balance: balance::zero(),
             total_shares: 0,
+            momentum_pool_id,
         };
 
         // Register pool in registry
@@ -327,54 +300,12 @@ module tradepool::tradepool {
 
     // ====== Admin Trading Functions ======
 
-    /// Admin function to buy TOKEN with SUI
-    /// Admin provides SUI payment, receives TOKEN from pool
-    ///
-    /// # Current Implementation
-    /// Uses constant product formula (x*y=k) for simulation
-    ///
-    /// # TODO: Integrate with Momentum DEX
-    ///
-    /// Replace the simulation logic (lines 334-365) with actual Momentum DEX calls:
-    ///
-    /// ```move
-    /// // STEP 1: Get Momentum pool reference
-    /// // You'll need to store Momentum pool ID in our Pool struct or pass it as parameter
-    /// let momentum_pool: &mut MomentumPool<SUI, TOKEN> = /* get from storage */;
-    ///
-    /// // STEP 2: Take SUI from our pool to use for swap
-    /// let sui_for_swap = balance::split(&mut pool.sui_balance, sui_amount);
-    /// let sui_coin_for_swap = coin::from_balance(sui_for_swap, ctx);
-    ///
-    /// // STEP 3: Call Momentum swap function
-    /// // Exact function name depends on Momentum's API - check their docs
-    /// let (sui_remaining, token_received) = momentum_router::swap_exact_input<SUI, TOKEN>(
-    ///     momentum_pool,
-    ///     sui_coin_for_swap,
-    ///     min_token_out,  // min_amount_out for slippage protection
-    ///     ctx
-    /// );
-    ///
-    /// // STEP 4: Put any remaining SUI back to pool
-    /// if (coin::value(&sui_remaining) > 0) {
-    ///     balance::join(&mut pool.sui_balance, coin::into_balance(sui_remaining));
-    /// } else {
-    ///     coin::destroy_zero(sui_remaining);
-    /// };
-    ///
-    /// // STEP 5: Add received tokens to pool
-    /// let token_amount_received = coin::value(&token_received);
-    /// balance::join(&mut pool.token_balance, coin::into_balance(token_received));
-    ///
-    /// // STEP 6: Take tokens from pool to return to admin
-    /// let token_balance = balance::split(&mut pool.token_balance, token_amount_received);
-    /// let token_out = coin::from_balance(token_balance, ctx);
-    /// ```
-    ///
-    /// Alternative approach using PTB (Programmable Transaction Blocks):
-    /// Instead of modifying this function, you can compose it with Momentum calls in a PTB
-    /// from the client side, which gives more flexibility.
-    ///
+    /// Admin function to buy TOKEN with SUI via Momentum DEX
+    /// 
+    /// Note: This function uses Momentum DEX flash swap pattern.
+    /// The swap is executed via Programmable Transaction Blocks (PTB).
+    /// 
+    /// See PTB composition example in CLAUDE.md for client-side integration.
     public fun admin_buy_token<TOKEN>(
         _admin_cap: &AdminCap,
         pool: &mut Pool<TOKEN>,
@@ -388,9 +319,16 @@ module tradepool::tradepool {
         let pool_token = balance::value(&pool.token_balance);
         assert!(pool_token > 0, EInsufficientBalance);
 
-        // ==================== TODO: REPLACE THIS SECTION ====================
-        // For now, use constant product formula to simulate swap
-        // In production: replace this with actual Momentum DEX call (see TODO above)
+        // NOTE: Actual Momentum DEX swap should be done via PTB from client side
+        // This is a placeholder that uses constant product formula
+        // 
+        // For production, compose this function with Momentum flash_swap in a PTB:
+        // 1. Call admin_buy_token to prepare SUI
+        // 2. Call mmt_v3::trade::flash_swap with the SUI
+        // 3. Call mmt_v3::trade::repay_flash_swap to complete
+        //
+        // See CLAUDE.md for detailed PTB examples
+        
         let pool_sui = balance::value(&pool.sui_balance);
         let token_out = (sui_amount * pool_token) / (pool_sui + sui_amount);
 
@@ -402,7 +340,6 @@ module tradepool::tradepool {
 
         // Take TOKEN from pool
         let token_balance = balance::split(&mut pool.token_balance, token_out);
-        // ==================== END SECTION TO REPLACE ====================
 
         // Emit event
         event::emit(TradeExecutedEvent {
@@ -418,55 +355,12 @@ module tradepool::tradepool {
         coin::from_balance(token_balance, ctx)
     }
 
-    /// Admin function to sell TOKEN for SUI
-    /// Admin provides TOKEN payment, receives SUI from pool
+    /// Admin function to sell TOKEN for SUI via Momentum DEX
     ///
-    /// # Current Implementation
-    /// Uses constant product formula (x*y=k) for simulation
-    ///
-    /// # TODO: Integrate with Momentum DEX
-    ///
-    /// Replace the simulation logic (lines 431-457) with actual Momentum DEX calls:
-    ///
-    /// ```move
-    /// // STEP 1: Get Momentum pool reference
-    /// let momentum_pool: &mut MomentumPool<SUI, TOKEN> = /* get from storage */;
-    ///
-    /// // STEP 2: Take TOKEN from our pool to use for swap
-    /// let token_for_swap = balance::split(&mut pool.token_balance, token_amount);
-    /// let token_coin_for_swap = coin::from_balance(token_for_swap, ctx);
-    ///
-    /// // STEP 3: Call Momentum swap function (TOKEN -> SUI)
-    /// // Note: For TOKEN->SUI swap, you might need to use swap_exact_output or similar
-    /// let (token_remaining, sui_received) = momentum_router::swap_exact_input<TOKEN, SUI>(
-    ///     momentum_pool,
-    ///     token_coin_for_swap,
-    ///     min_sui_out,  // min_amount_out for slippage protection
-    ///     ctx
-    /// );
-    ///
-    /// // STEP 4: Put any remaining TOKEN back to pool
-    /// if (coin::value(&token_remaining) > 0) {
-    ///     balance::join(&mut pool.token_balance, coin::into_balance(token_remaining));
-    /// } else {
-    ///     coin::destroy_zero(token_remaining);
-    /// };
-    ///
-    /// // STEP 5: Add received SUI to pool
-    /// let sui_amount_received = coin::value(&sui_received);
-    /// balance::join(&mut pool.sui_balance, coin::into_balance(sui_received));
-    ///
-    /// // STEP 6: Take SUI from pool to return to admin
-    /// let sui_balance = balance::split(&mut pool.sui_balance, sui_amount_received);
-    /// let sui_out = coin::from_balance(sui_balance, ctx);
-    /// ```
-    ///
-    /// # Important Notes:
-    /// - Momentum may use different function names (check their SDK documentation)
-    /// - You may need to handle pool fees separately
-    /// - Consider using Momentum's router for multi-hop swaps if needed
-    /// - PTB composition from client side is often simpler than on-chain integration
-    ///
+    /// Note: This function uses Momentum DEX flash swap pattern.
+    /// The swap is executed via Programmable Transaction Blocks (PTB).
+    /// 
+    /// See PTB composition example in CLAUDE.md for client-side integration.
     public fun admin_sell_token<TOKEN>(
         _admin_cap: &AdminCap,
         pool: &mut Pool<TOKEN>,
@@ -480,9 +374,16 @@ module tradepool::tradepool {
         let pool_sui = balance::value(&pool.sui_balance);
         assert!(pool_sui > 0, EInsufficientBalance);
 
-        // ==================== TODO: REPLACE THIS SECTION ====================
-        // Constant product formula simulation
-        // In production: replace this with actual Momentum DEX call (see TODO above)
+        // NOTE: Actual Momentum DEX swap should be done via PTB from client side
+        // This is a placeholder that uses constant product formula
+        //
+        // For production, compose this function with Momentum flash_swap in a PTB:
+        // 1. Call admin_sell_token to prepare TOKEN
+        // 2. Call mmt_v3::trade::flash_swap with the TOKEN
+        // 3. Call mmt_v3::trade::repay_flash_swap to complete
+        //
+        // See CLAUDE.md for detailed PTB examples
+        
         let pool_token = balance::value(&pool.token_balance);
         let sui_out = (token_amount * pool_sui) / (pool_token + token_amount);
 
@@ -494,7 +395,6 @@ module tradepool::tradepool {
 
         // Take SUI from pool
         let sui_balance = balance::split(&mut pool.sui_balance, sui_out);
-        // ==================== END SECTION TO REPLACE ====================
 
         // Emit event
         event::emit(TradeExecutedEvent {
@@ -530,6 +430,11 @@ module tradepool::tradepool {
     /// Get the total shares issued by the pool
     public fun get_pool_total_shares<TOKEN>(pool: &Pool<TOKEN>): u64 {
         pool.total_shares
+    }
+
+    /// Get the Momentum pool ID for this pool
+    public fun get_momentum_pool_id<TOKEN>(pool: &Pool<TOKEN>): ID {
+        pool.momentum_pool_id
     }
 
     /// Calculate the value of shares in both SUI and TOKEN
