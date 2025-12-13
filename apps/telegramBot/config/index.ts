@@ -1,3 +1,5 @@
+import '../src/env'; // Load environment variables first
+
 export interface Config {
   telegram: {
     botToken: string;

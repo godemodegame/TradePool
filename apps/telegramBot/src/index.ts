@@ -1,11 +1,4 @@
-import dotenv from 'dotenv';
-import path from 'path';
-
-// Load .env file BEFORE importing config
-// In production: dist/src/index.js -> ../../.env (goes to app root)
-// In development: src/index.ts -> ../.env (goes to app root)
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-
+import './env'; // Load environment variables first
 import TelegramBot from 'node-telegram-bot-api';
 import { config, validateConfig } from '../config';
 import { database } from './database';
