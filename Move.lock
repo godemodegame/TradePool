@@ -2,10 +2,13 @@
 
 [move]
 version = 3
-manifest_digest = "AC49AD630C0848C551221FE1818FE057706FD6AA47FB2B608866E4BEB76C810A"
-deps_digest = "3C4103934B1E040BB6B23F1D610B4EF9F2F1166A50A104EADCF77467C004C600"
+manifest_digest = "A91ACE6F2D7A66C886D1756C89BFCFB43C3B7351E4469F4FD206AFE22F34688B"
+deps_digest = "397E6A9F7A624706DBDFEE056CE88391A15876868FD18A88504DA74EB458D697"
 dependencies = [
+  { id = "Bridge", name = "Bridge" },
+  { id = "MoveStdlib", name = "MoveStdlib" },
   { id = "Sui", name = "Sui" },
+  { id = "SuiSystem", name = "SuiSystem" },
   { id = "mmt_v3", name = "mmt_v3" },
 ]
 
@@ -60,6 +63,6 @@ flavor = "sui"
 
 [env.testnet]
 chain-id = "4c78adac"
-original-published-id = "0xc9df06161ecb7c2c2649d397496c89150c038bcc46121ac5648da89f63dbba9f"
-latest-published-id = "0xc9df06161ecb7c2c2649d397496c89150c038bcc46121ac5648da89f63dbba9f"
-published-version = "1"
+original-published-id = "0x8418b67396898107e1af8c4187c5fc140028dfa08522de6bd6f973a811301db9"
+latest-published-id = "0x43a23c1d037b195652d1141d87087119f946b8691cb2fbc495cb7e68d6bd1429"
+published-version = "2"

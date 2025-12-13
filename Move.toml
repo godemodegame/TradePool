@@ -5,12 +5,10 @@ edition = "2024.beta" # edition = "legacy" to use legacy (pre-2024) Move
 # authors = ["..."]      # e.g., ["Joe Smith (joesmith@noemail.com)", "John Snow (johnsnow@noemail.com)"]
 
 [dependencies]
-Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "9a4d4016ba66c646c76c4b8d54fa9e767f240ab1" }
 mmt_v3 = { git = "https://github.com/mmt-finance/v3-core.git", subdir = "clmm", rev = "667f446" }
 
 [addresses]
 tradepool = "0x0"
-mmt_v3 = "0xb7cc8041084d23455e2d21ec99eb73b3ea6107ea4548a68dcaa8ba3b645bd109"
 
 # Named addresses will be accessible in Move as `@name`. They're also exported:
 # for example, `std = "0x1"` is exported by the Standard Library.
