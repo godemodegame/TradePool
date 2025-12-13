@@ -23,6 +23,9 @@ export function CreatePool() {
     try {
       const tx = new Transaction()
 
+      // Normalize token type: replace multiple colons with double colons
+      const normalizedTokenType = tokenType.replace(/:{3,}/g, '::')
+
       tx.moveCall({
         target: `${PACKAGE_ID}::tradepool::create_pool`,
         arguments: [
@@ -31,7 +34,7 @@ export function CreatePool() {
           tx.pure.string(poolName),
           tx.pure.id(momentumPoolId),
         ],
-        typeArguments: [tokenType],
+        typeArguments: [normalizedTokenType],
       })
 
       signAndExecute(
@@ -85,6 +88,11 @@ export function CreatePool() {
         <p className="text-xs text-gray-500 mt-1">
           Example: 0x2::sui::SUI or your custom token type
         </p>
+        {tokenType && tokenType.includes('::::') && (
+          <p className="text-xs text-yellow-600 mt-1">
+            ⚠️ Multiple colons detected - will be normalized to "::"
+          </p>
+        )}
       </div>
 
       <div>

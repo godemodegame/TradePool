@@ -27,6 +27,9 @@ export function AdminTrading() {
     try {
       const tx = new Transaction()
 
+      // Normalize token type: replace multiple colons with double colons
+      const normalizedTokenType = tokenType.replace(/:{3,}/g, '::')
+
       const target =
         operation === 'buy'
           ? `${PACKAGE_ID}::tradepool::admin_buy_token`
@@ -44,7 +47,7 @@ export function AdminTrading() {
           tx.object(CLOCK_ID),
           tx.object(MOMENTUM_VERSION_ID),
         ],
-        typeArguments: [tokenType],
+        typeArguments: [normalizedTokenType],
       })
 
       signAndExecute(
@@ -122,6 +125,11 @@ export function AdminTrading() {
           value={tokenType}
           onChange={(e) => setTokenType(e.target.value)}
         />
+        {tokenType && tokenType.includes('::::') && (
+          <p className="text-xs text-yellow-600 mt-1">
+            ⚠️ Multiple colons detected - will be normalized to "::"
+          </p>
+        )}
       </div>
 
       <div>

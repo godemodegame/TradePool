@@ -25,6 +25,9 @@ export function DepositLiquidity() {
     try {
       const tx = new Transaction()
 
+      // Normalize token type: replace multiple colons with double colons
+      const normalizedTokenType = tokenType.replace(/:{3,}/g, '::')
+
       tx.moveCall({
         target: `${PACKAGE_ID}::tradepool::deposit`,
         arguments: [
@@ -32,7 +35,7 @@ export function DepositLiquidity() {
           tx.object(suiCoinId),
           tx.object(tokenCoinId),
         ],
-        typeArguments: [tokenType],
+        typeArguments: [normalizedTokenType],
       })
 
       signAndExecute(
@@ -85,6 +88,11 @@ export function DepositLiquidity() {
           value={tokenType}
           onChange={(e) => setTokenType(e.target.value)}
         />
+        {tokenType && tokenType.includes('::::') && (
+          <p className="text-xs text-yellow-600 mt-1">
+            ⚠️ Multiple colons detected - will be normalized to "::"
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
