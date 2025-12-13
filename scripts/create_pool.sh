@@ -38,7 +38,7 @@ sui client call \
   --package "$PACKAGE_ID" \
   --module pool_factory \
   --function create_pool \
-  --args "$REGISTRY_ID" "\"$POOL_NAME\"" \
+  --args "$REGISTRY_ID" "\"$POOL_NAME\"" "\"SUI\"" \
   --gas-budget "$GAS_BUDGET"
 
 if [ $? -eq 0 ]; then
