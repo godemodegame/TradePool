@@ -54,7 +54,7 @@ export function AdminPositions() {
   const effectiveTickUpper = isCustomTicks ? customTickUpper : selectedTickPreset.upper.toString()
 
   // Auto-calculate slippage protection
-  const calculateMinOut = (amount: string, isToken: boolean = true) => {
+  const calculateMinOut = (amount: string) => {
     if (!amount || !slippagePercent) return '0'
     const amountNum = parseFloat(amount)
     const slippage = parseFloat(slippagePercent) / 100
@@ -91,7 +91,7 @@ export function AdminPositions() {
               tokenType = '0x' + tokenType
             }
 
-            let poolData = {
+            let poolData: PoolOption = {
               id: poolId,
               name: parsedEvent.pool_name || 'Unknown Pool',
               tokenType,
@@ -228,7 +228,7 @@ export function AdminPositions() {
 
           const suiAmountMist = Math.floor(parseFloat(suiAmount) * 1e9)
           const [suiCoin] = tx.splitCoins(tx.gas, [suiAmountMist])
-          const minOut = advancedMode && minTokenOut ? minTokenOut : calculateMinOut(suiAmount, true)
+          const minOut = advancedMode && minTokenOut ? minTokenOut : calculateMinOut(suiAmount)
 
           console.log(`[AdminPositions] Create position params:`)
           console.log(`[AdminPositions]   Pool ID: ${selectedPool.id}`)
@@ -270,7 +270,7 @@ export function AdminPositions() {
 
           const suiAmountMist = Math.floor(parseFloat(suiAmount) * 1e9)
           const [suiCoin] = tx.splitCoins(tx.gas, [suiAmountMist])
-          const minOut = advancedMode && minTokenOut ? minTokenOut : calculateMinOut(suiAmount, true)
+          const minOut = advancedMode && minTokenOut ? minTokenOut : calculateMinOut(suiAmount)
 
           console.log(`[AdminPositions] Add to position params:`)
           console.log(`[AdminPositions]   SUI amount: ${suiAmount} SUI (${suiAmountMist} MIST)`)
@@ -588,7 +588,7 @@ export function AdminPositions() {
           {/* Advanced Options */}
           {advancedMode && (
             <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 space-y-3">
-              {(operation === 'deposit' || operation === 'add') && (
+              {operation === 'deposit' && (
                 <div>
                   <label className="label">Min Token Out (Manual)</label>
                   <input
