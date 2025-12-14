@@ -135,7 +135,7 @@ export function DepositLiquidity() {
   return (
     <div className="space-y-4">
       {/* Wallet Balance Display */}
-      <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+      <div className="bg-[#0a1628]/50 rounded-lg p-3 border border-gray-600/50">
         <p className="text-xs text-gray-400 mb-2">Your SUI Balance</p>
         <p className="text-white font-semibold text-lg">
           {suiLoading ? 'Loading...' : `${(Number(suiBalance) / 1e9).toFixed(4)} SUI`}
@@ -162,7 +162,7 @@ export function DepositLiquidity() {
           <p className="text-xs text-yellow-400 mt-1">No pools found. Create a pool first!</p>
         )}
         {selectedPool && (
-          <div className="mt-2 p-2 bg-gray-900 rounded border border-gray-700">
+          <div className="mt-2 p-2 bg-[#0a1628]/50 rounded border border-gray-600/50">
             <p className="text-xs text-gray-400">Selected Pool</p>
             <p className="text-sm text-white font-medium">{selectedPool.name}</p>
             <p className="text-xs text-gray-400 mt-1 font-mono break-all">

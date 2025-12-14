@@ -193,7 +193,7 @@ export function PoolInfo() {
       {poolDetails && (
         <div className="space-y-4">
           {/* Basic Info */}
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+          <div className="bg-[#0a1628]/50 rounded-lg p-4 border border-gray-600/50">
             <h3 className="text-lg font-semibold text-white mb-3">Pool Information</h3>
 
             <div className="space-y-2 text-sm">
@@ -233,7 +233,7 @@ export function PoolInfo() {
           </div>
 
           {/* Momentum Pool ID */}
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+          <div className="bg-[#0a1628]/50 rounded-lg p-4 border border-gray-600/50">
             <h3 className="text-sm font-semibold text-white mb-2">Momentum Pool ID</h3>
             <p className="text-xs font-mono text-gray-400 break-all">
               {poolDetails.momentumPoolId || 'Not set'}
@@ -241,7 +241,7 @@ export function PoolInfo() {
           </div>
 
           {/* Share Value Calculator */}
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+          <div className="bg-[#0a1628]/50 rounded-lg p-4 border border-gray-600/50">
             <h3 className="text-sm font-semibold text-white mb-3">Calculate Share Value</h3>
 
             <div className="space-y-3">
@@ -257,7 +257,7 @@ export function PoolInfo() {
               </div>
 
               <button
-                className="btn btn-primary w-full"
+                className="btn btn-glow w-full"
                 onClick={calculateShareValue}
                 disabled={loading || !sharesInput}
               >
@@ -265,7 +265,7 @@ export function PoolInfo() {
               </button>
 
               {poolDetails.shareValue && (
-                <div className="bg-green-900/20 border border-green-700 rounded-lg p-3 mt-3">
+                <div className="info-box-green rounded-lg p-3 mt-3">
                   <p className="text-xs text-gray-400 mb-2">Value of {sharesInput} shares:</p>
                   <div className="space-y-1">
                     <p className="text-green-400 font-semibold">
@@ -281,7 +281,7 @@ export function PoolInfo() {
           </div>
 
           {/* Pool ID */}
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
+          <div className="bg-[#0a1628]/50 rounded-lg p-4 border border-gray-600/50">
             <h3 className="text-sm font-semibold text-white mb-2">Pool Object ID</h3>
             <p className="text-xs font-mono text-gray-400 break-all">
               {selectedPool?.id}

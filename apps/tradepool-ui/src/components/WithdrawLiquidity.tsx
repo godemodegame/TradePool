@@ -273,7 +273,7 @@ export function WithdrawLiquidity() {
           {loadingCoins ? (
             <div className="text-center py-4 text-gray-400">Loading LP tokens...</div>
           ) : lpCoins.length === 0 ? (
-            <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
+            <div className="info-box-purple rounded-lg p-4">
               <p className="text-yellow-400 text-sm font-semibold">No LP tokens found for "{selectedPool.name}"</p>
               <p className="text-xs text-gray-400 mt-2">
                 You don't have any LP tokens for this specific pool. Deposit liquidity to this pool first.
@@ -355,7 +355,7 @@ export function WithdrawLiquidity() {
 
       {/* Info */}
       {selectedCoinId && withdrawAmount && (
-        <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
+        <div className="info-box-cyan rounded-lg p-3">
           <p className="text-xs text-blue-300">
             💡 Burns <strong>{withdrawAmount}</strong> LP tokens and returns proportional SUI + tokens
           </p>

@@ -417,7 +417,7 @@ export function AdminPositions() {
       </div>
 
       {/* SUI Balance Display */}
-      <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
+      <div className="bg-[#0a1628]/50 rounded-lg p-3 border border-gray-600/50">
         <p className="text-xs text-gray-400 mb-1">Your SUI Balance</p>
         <p className="text-white font-semibold text-lg">
           {suiLoading ? 'Loading...' : `${(Number(suiBalance) / 1e9).toFixed(4)} SUI`}
@@ -446,7 +446,7 @@ export function AdminPositions() {
         <>
           {/* Position Status Info */}
           {selectedPool.hasPosition && (
-            <div className="bg-green-900/20 border border-green-700 rounded-lg p-3">
+            <div className="info-box-green rounded-lg p-3">
               <p className="text-xs text-green-300 font-semibold mb-1">✓ Active Position Found</p>
               <p className="text-xs text-gray-400 font-mono break-all">
                 Position ID: {selectedPool.positionId}
@@ -521,7 +521,7 @@ export function AdminPositions() {
                   className={`flex-1 py-2 px-3 rounded text-sm ${
                     withdrawAll
                       ? 'bg-red-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      : 'bg-gray-500/50 text-gray-300 hover:bg-gray-500/50'
                   }`}
                   onClick={() => setWithdrawAll(true)}
                 >
@@ -531,7 +531,7 @@ export function AdminPositions() {
                   className={`flex-1 py-2 px-3 rounded text-sm ${
                     !withdrawAll
                       ? 'bg-yellow-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      : 'bg-gray-500/50 text-gray-300 hover:bg-gray-500/50'
                   }`}
                   onClick={() => setWithdrawAll(false)}
                 >
@@ -555,7 +555,7 @@ export function AdminPositions() {
                     className={`flex-1 py-2 px-3 rounded text-sm ${
                       slippagePercent === pct
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        : 'bg-gray-500/50 text-gray-300 hover:bg-gray-500/50'
                     }`}
                     onClick={() => setSlippagePercent(pct)}
                   >
@@ -587,7 +587,7 @@ export function AdminPositions() {
 
           {/* Advanced Options */}
           {advancedMode && (
-            <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 space-y-3">
+            <div className="bg-[#0a1628]/50 border border-gray-600/50 rounded-lg p-4 space-y-3">
               {operation === 'deposit' && (
                 <div>
                   <label className="label">Min Token Out (Manual)</label>
@@ -617,7 +617,7 @@ export function AdminPositions() {
 
           {/* Submit Button */}
           <button
-            className="btn btn-primary w-full"
+            className="btn btn-glow w-full"
             onClick={handleOperation}
             disabled={loading || !account || !selectedPool || (operation === 'withdraw' && !selectedPool.hasPosition)}
           >
@@ -631,7 +631,7 @@ export function AdminPositions() {
           </button>
 
           {/* Info Box */}
-          <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
+          <div className="info-box-cyan rounded-lg p-3">
             <p className="text-xs text-blue-300">
               {operation === 'deposit' && !selectedPool.hasPosition && (
                 <>💡 <strong>Create Position:</strong> Deposits SUI, auto-swaps half to tokens, and creates a Momentum position.</>

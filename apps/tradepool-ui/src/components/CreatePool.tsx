@@ -184,7 +184,7 @@ export function CreatePool() {
 
       {/* Advanced Options */}
       {advancedMode && (
-        <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-4 space-y-3">
+        <div className="bg-[#0a1628]/50 border border-gray-600/50 rounded-lg p-4 space-y-3">
           <div>
             <label className="label">Custom Admin Address (Optional)</label>
             <input
@@ -200,7 +200,7 @@ export function CreatePool() {
           </div>
 
           {!isCustomToken && (
-            <div className="bg-blue-900/20 border border-blue-700 rounded p-3">
+            <div className="info-box-cyan rounded p-3">
               <p className="text-xs text-blue-300 font-semibold mb-1">Token Details:</p>
               <p className="text-xs text-gray-400 font-mono break-all mb-2">
                 Type: {selectedToken.type}
@@ -214,7 +214,7 @@ export function CreatePool() {
       )}
 
       {/* Preview */}
-      <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-3">
+      <div className="bg-[#0a1628]/50 border border-gray-600/50 rounded-lg p-3">
         <p className="text-xs text-gray-400 mb-2">Preview:</p>
         <p className="text-sm text-white font-semibold">
           Pool Name: {effectivePoolName}
@@ -229,7 +229,7 @@ export function CreatePool() {
 
       {/* Create Button */}
       <button
-        className="btn btn-primary w-full"
+        className="btn btn-glow w-full"
         onClick={handleCreatePool}
         disabled={loading || !currentAccount || (!effectiveTokenType || !effectiveMomentumPoolId)}
       >
@@ -237,7 +237,7 @@ export function CreatePool() {
       </button>
 
       {/* Info */}
-      <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
+      <div className="info-box-cyan rounded-lg p-3">
         <p className="text-xs text-blue-300">
           💡 <strong>Quick Start:</strong> Select a token from the dropdown and click "Create Pool".
           The pool name will be auto-generated as "SUI-{selectedToken.symbol}".

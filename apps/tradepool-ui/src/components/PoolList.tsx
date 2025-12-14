@@ -96,7 +96,7 @@ export function PoolList() {
   }, [])
 
   return (
-    <div className="card">
+    <div className="card-glow">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-semibold text-white">Available Pools</h2>
@@ -104,13 +104,13 @@ export function PoolList() {
             {pools.length} pool{pools.length !== 1 ? 's' : ''} found
           </p>
         </div>
-        <button className="btn btn-primary" onClick={fetchPools} disabled={loading}>
+        <button className="btn btn-glow" onClick={fetchPools} disabled={loading}>
           {loading ? 'Loading...' : 'Refresh Pools'}
         </button>
       </div>
 
       {error && (
-        <div className="bg-red-900/20 border border-red-700 rounded-lg p-4 mb-4">
+        <div className="info-box-red rounded-lg p-4 mb-4">
           <p className="text-red-400 text-sm">Error loading pools: {error}</p>
         </div>
       )}
@@ -127,7 +127,7 @@ export function PoolList() {
       ) : (
         <div className="space-y-4">
           {pools.map((pool) => (
-            <div key={pool.id} className="bg-gray-900 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-colors">
+            <div key={pool.id} className="bg-[#0a1628]/50 rounded-lg p-4 border border-gray-600/50 hover:border-blue-500/50 transition-all">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h3 className="text-lg font-semibold text-white">{pool.name}</h3>
