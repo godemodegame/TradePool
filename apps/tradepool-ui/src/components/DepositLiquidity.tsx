@@ -88,8 +88,9 @@ export function DepositLiquidity() {
       // Split SUI coin for deposit
       const [suiCoin] = tx.splitCoins(tx.gas, [suiAmountMist])
 
-      // Call deposit function and capture the returned LP receipt
-      const [receipt] = tx.moveCall({
+      // Call deposit function - returns Coin<LPToken<TOKEN>>
+      // The coin is automatically transferred to the sender, no need to explicitly transfer
+      tx.moveCall({
         target: `${PACKAGE_ID}::tradepool::deposit`,
         arguments: [
           tx.object(selectedPool.id),
@@ -98,9 +99,6 @@ export function DepositLiquidity() {
         typeArguments: [normalizedTokenType],
       })
 
-      // Transfer the LP receipt to the user
-      tx.transferObjects([receipt], tx.pure.address(account.address))
-
       signAndExecute(
         {
           transaction: tx,
@@ -108,7 +106,7 @@ export function DepositLiquidity() {
         {
           onSuccess: (result) => {
             console.log('Deposit successful:', result)
-            alert('Deposit successful! You received an LP receipt.')
+            alert('Deposit successful! You received LP tokens.')
             setSuiAmount('')
           },
           onError: (error) => {

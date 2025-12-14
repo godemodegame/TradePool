@@ -11,7 +11,6 @@ export function CreatePool() {
 
   const { mutate: signAndExecute } = useSignAndExecuteTransaction()
   const currentAccount = useCurrentAccount()
-  const client = useSuiClient()
 
   const handleCreatePool = async () => {
     if (!currentAccount) {

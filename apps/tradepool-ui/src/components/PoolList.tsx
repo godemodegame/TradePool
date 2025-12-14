@@ -52,13 +52,17 @@ export function PoolList() {
 
           if (poolObject.data?.content && 'fields' in poolObject.data.content) {
             const fields = poolObject.data.content.fields as any
+            
+            // Extract total shares from lp_supply.fields.value
+            const totalShares = fields.lp_supply?.fields?.value || '0'
+            
             return {
               id: poolId,
               name: fields.name || 'Unknown',
               tokenType: parsedEvent.token_type?.name || 'Unknown',
               suiBalance: fields.sui_balance || '0',
               tokenBalance: fields.token_balance || '0',
-              totalShares: fields.total_shares || '0',
+              totalShares: totalShares,
               momentumPoolId: fields.momentum_pool_id || '',
               creator: parsedEvent.creator || '',
               admin: fields.admin || parsedEvent.creator || '',
