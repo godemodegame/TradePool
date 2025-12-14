@@ -2,8 +2,9 @@ import { ConnectButton, useCurrentAccount } from '@mysten/dapp-kit'
 import { CreatePool } from './components/CreatePool'
 import { DepositLiquidity } from './components/DepositLiquidity'
 import { WithdrawLiquidity } from './components/WithdrawLiquidity'
-import { AdminTrading } from './components/AdminTrading'
+import { AdminPositions } from './components/AdminPositions'
 import { PoolList } from './components/PoolList'
+import { PoolInfo } from './components/PoolInfo'
 
 function App() {
   const account = useCurrentAccount()
@@ -38,6 +39,12 @@ function App() {
             {/* Pool List */}
             <PoolList />
 
+            {/* Pool Info */}
+            <div className="card">
+              <h2 className="text-xl font-semibold mb-4 text-white">Pool Details</h2>
+              <PoolInfo />
+            </div>
+
             {/* Tabs for different operations */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Create Pool */}
@@ -58,10 +65,10 @@ function App() {
                 <WithdrawLiquidity />
               </div>
 
-              {/* Admin Trading */}
+              {/* Admin Positions */}
               <div className="card">
-                <h2 className="text-xl font-semibold mb-4 text-white">Admin Trading</h2>
-                <AdminTrading />
+                <h2 className="text-xl font-semibold mb-4 text-white">Admin Positions</h2>
+                <AdminPositions />
               </div>
             </div>
           </div>

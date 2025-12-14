@@ -1,195 +1,146 @@
 # TradePool UI
 
-Простой веб-интерфейс для тестирования смарт-контракта TradePool на Sui blockchain.
+Modern React frontend for TradePool - a Sui-based liquidity pool protocol with Momentum DEX integration.
 
-## Возможности
+## Features
 
-- 🔗 Подключение Sui кошелька
-- 🏊 Создание новых пулов ликвидности
-- 💰 Депозит и вывод ликвидности
-- 📊 Просмотр информации о пулах
-- 🔄 Админские торговые операции (покупка/продажа токенов через Momentum DEX)
+- **Pool Management**: Create and manage SUI/TOKEN liquidity pools
+- **Liquidity Provision**: Single-sided SUI deposits with LP token rewards
+- **Admin Positions**: Advanced position management with Momentum DEX
+- **Real-time Data**: Live pool stats and LP token value calculator
 
-## Установка
+## Tech Stack
 
+- **React 18** with TypeScript
+- **Vite** for fast development
+- **TailwindCSS** for styling
+- **@mysten/dapp-kit** for Sui wallet integration
+- **@mysten/sui** for blockchain interactions
+
+## Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Sui wallet (Sui Wallet, Suiet, etc.)
+
+## Setup
+
+1. Install dependencies:
 ```bash
-# Установить зависимости
 npm install
-
-# Или с yarn
-yarn install
 ```
 
-## Настройка
+2. Configure environment variables in `.env`:
+```env
+VITE_PACKAGE_ID=<your_package_id>
+VITE_REGISTRY_ID=<pool_registry_id>
+VITE_ADMIN_CAP_ID=<admin_cap_id>
+VITE_MOMENTUM_VERSION_ID=<momentum_version_id>
+```
 
-1. Скопируйте `.env.example` в `.env`:
-   ```bash
-   cp .env.example .env
-   ```
+3. Start development server:
+```bash
+npm run dev
+```
 
-2. Задеплойте смарт-контракт TradePool:
-   ```bash
-   cd ../..
-   sui client publish --gas-budget 100000000
-   ```
+## Project Structure
 
-3. Заполните `.env` данными из деплоя:
-   - `VITE_PACKAGE_ID` - Package ID из вывода `sui client publish`
-   - `VITE_REGISTRY_ID` - Object ID созданного Registry (shared object)
-   - `VITE_ADMIN_CAP_ID` - Object ID AdminCap (transferred object)
-   - `VITE_MOMENTUM_VERSION_ID` - Momentum Version object ID
+```
+src/
+├── components/
+│   ├── AdminPositions.tsx    # Position management (create/add/withdraw/close)
+│   ├── CreatePool.tsx         # Pool creation with optional admin
+│   ├── DepositLiquidity.tsx   # Single-sided SUI deposits
+│   ├── WithdrawLiquidity.tsx  # LP token redemption
+│   ├── PoolInfo.tsx           # Pool details and share calculator
+│   └── PoolList.tsx           # All pools overview
+├── hooks/
+│   └── useCoins.ts            # Coin balance hook
+├── lib/
+│   └── sui-client.ts          # Sui network configuration
+├── types/
+│   └── index.ts               # Constants and types
+├── App.tsx                    # Main application
+└── main.tsx                   # Entry point
+```
 
-## Запуск
+## Components
+
+### CreatePool
+Create new SUI/TOKEN liquidity pools with:
+- Custom pool name
+- Token type specification
+- Momentum pool integration
+- Optional admin designation
+
+### DepositLiquidity
+Add liquidity to pools:
+- Single-sided SUI deposits only
+- Receive LP tokens (fungible)
+- Automatic share calculation
+
+### WithdrawLiquidity
+Redeem LP tokens:
+- Burn LP tokens
+- Receive proportional SUI + TOKEN
+- Multiple LP token support
+
+### AdminPositions
+Advanced position management (admin only):
+- **Create Position**: Deposit SUI, auto-swap half to TOKEN, create Momentum position
+- **Add Liquidity**: Add more SUI to existing position
+- **Withdraw to SUI**: Remove liquidity and convert all to SUI
+- **Close Position**: Complete position closure
+
+### PoolList
+Overview of all pools:
+- SUI and token balances
+- Total LP supply
+- Admin information
+- Momentum pool connection
+
+### PoolInfo
+Detailed pool information:
+- Current balances
+- Admin address
+- LP share calculator
+- Momentum integration status
+
+## Network
+
+Currently configured for **Sui Testnet**.
+
+## Smart Contract Integration
+
+The UI integrates with TradePool smart contracts that implement:
+- Single-sided liquidity provision
+- LP token minting/burning
+- Momentum DEX position management
+- Flash swap integration
+
+## Development
 
 ```bash
-# Запустить dev сервер
+# Start dev server
 npm run dev
 
-# Или с yarn
-yarn dev
-```
-
-Приложение откроется по адресу [http://localhost:3000](http://localhost:3000)
-
-## Сборка для продакшена
-
-```bash
+# Build for production
 npm run build
+
+# Preview production build
 npm run preview
 ```
 
-## Использование
+## Current Deployment
 
-### 1. Подключение кошелька
+**Package ID:** `0x9e934ab240dfb05fa694c08bdde9ee95d2477b085b99ea5a141ffa5dfe57096e`
+**Registry ID:** `0xb7c9e8afbbe759b4a4b492b1bdbe3d691d319edf5bce2e1525b2542bcbdf1a12`
+**Admin Cap ID:** `0xa9136516365bf43580fef897a1ba12460b2f64a3e373108ebd06ae14971efbf6`
 
-Нажмите "Connect Wallet" в правом верхнем углу и выберите ваш Sui кошелек (Sui Wallet, Suiet, Ethos, и т.д.)
-
-### 2. Создание пула
-
-В секции "Create Pool":
-- Введите имя пула (например, "SUI-USDC")
-- Введите полный тип токена (например, `0x2::sui::SUI`)
-- Введите ID Momentum пула для этой пары
-- Нажмите "Create Pool" (требуется AdminCap)
-
-### 3. Депозит ликвидности
-
-В секции "Deposit Liquidity":
-- Введите Pool ID
-- Введите тип токена
-- Введите количество SUI и токенов
-- Введите Object ID монет SUI и токенов
-- Нажмите "Deposit Liquidity"
-
-Вы получите LP Receipt NFT, который представляет вашу долю в пуле.
-
-### 4. Вывод ликвидности
-
-В секции "Withdraw Liquidity":
-- Введите Pool ID
-- Введите тип токена
-- Введите ID вашего LP Receipt
-- Нажмите "Withdraw Liquidity"
-
-Вы получите обратно SUI и токены пропорционально вашей доле.
-
-### 5. Админская торговля
-
-В секции "Admin Trading" (требуется AdminCap):
-
-**Покупка токенов (SUI → TOKEN):**
-- Выберите "Buy Token"
-- Введите Pool ID и Momentum Pool ID
-- Введите количество SUI
-- Установите минимальный выход токенов (защита от проскальзывания)
-- Введите SUI Coin ID
-- Нажмите "Buy Token"
-
-**Продажа токенов (TOKEN → SUI):**
-- Выберите "Sell Token"
-- Введите Pool ID и Momentum Pool ID
-- Введите количество токенов
-- Установите минимальный выход SUI
-- Введите Token Coin ID
-- Нажмите "Sell Token"
-
-## Технологии
-
-- **React 18** - UI framework
-- **TypeScript** - Type safety
-- **Vite** - Build tool
-- **Tailwind CSS** - Styling
-- **@mysten/dapp-kit** - Sui wallet integration
-- **@mysten/sui** - Sui SDK
-- **@tanstack/react-query** - Data fetching
-
-## Структура проекта
-
-```
-tradepool-ui/
-├── src/
-│   ├── components/       # React компоненты
-│   │   ├── CreatePool.tsx
-│   │   ├── DepositLiquidity.tsx
-│   │   ├── WithdrawLiquidity.tsx
-│   │   ├── AdminTrading.tsx
-│   │   └── PoolList.tsx
-│   ├── lib/             # Утилиты и конфиги
-│   │   └── sui-client.ts
-│   ├── types/           # TypeScript типы
-│   │   └── index.ts
-│   ├── App.tsx          # Главный компонент
-│   ├── main.tsx         # Entry point
-│   └── index.css        # Стили
-├── package.json
-├── vite.config.ts
-└── tailwind.config.js
-```
-
-## Тестирование на testnet
-
-1. Убедитесь, что у вас есть SUI на testnet:
-   ```bash
-   sui client faucet
-   ```
-
-2. Задеплойте контракт на testnet:
-   ```bash
-   sui client publish --gas-budget 100000000
-   ```
-
-3. Запустите UI и подключите ваш кошелек
-
-4. Создайте тестовый пул и попробуйте операции
-
-## Важные замечания
-
-⚠️ **Только для тестирования!** Этот UI предназначен для тестирования смарт-контракта, не используйте в продакшене без должного аудита.
-
-⚠️ **AdminCap**: Функции создания пула и торговли доступны только владельцу AdminCap.
-
-⚠️ **Momentum Integration**: Для торговых операций нужны существующие Momentum пулы на testnet/mainnet.
-
-## Troubleshooting
-
-### Ошибка "Package ID not found"
-Убедитесь, что вы заполнили `.env` файл с правильными ID после деплоя контракта.
-
-### Ошибка подключения кошелька
-Установите расширение Sui Wallet для вашего браузера: https://chrome.google.com/webstore/detail/sui-wallet
-
-### Транзакция не проходит
-- Проверьте баланс газа (SUI)
-- Убедитесь, что вы используете правильную сеть (testnet/mainnet)
-- Проверьте правильность введенных Object ID
-
-## Полезные ссылки
-
-- [Sui Documentation](https://docs.sui.io/)
-- [Sui dApp Kit](https://sdk.mystenlabs.com/dapp-kit)
-- [TradePool Smart Contract](../../sources/tradepool.move)
-- [Momentum DEX](https://docs.mmt.finance/)
-
-## Лицензия
+## License
 
 MIT
+
+---
+
+Built with ❤️ for Sui ecosystem

@@ -37,10 +37,17 @@ export function DepositLiquidity() {
 
         const poolOptions: PoolOption[] = events.data.map((event) => {
           const parsedEvent = event.parsedJson as any
+          let tokenType = parsedEvent.token_type?.name || ''
+
+          // Add 0x prefix if missing
+          if (tokenType && !tokenType.startsWith('0x')) {
+            tokenType = '0x' + tokenType
+          }
+
           return {
             id: parsedEvent.pool_id,
             name: parsedEvent.pool_name || 'Unknown Pool',
-            tokenType: parsedEvent.token_type?.name || '',
+            tokenType,
           }
         })
 

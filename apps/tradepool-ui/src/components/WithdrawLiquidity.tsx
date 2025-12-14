@@ -9,23 +9,21 @@ interface PoolOption {
   tokenType: string
 }
 
-interface UserLPReceipt {
+interface UserLPCoin {
   id: string
-  poolId: string
-  shares: string
-  tokenType: string
+  balance: string
+  coinType: string
 }
 
 export function WithdrawLiquidity() {
   const [pools, setPools] = useState<PoolOption[]>([])
   const [loadingPools, setLoadingPools] = useState(false)
   const [selectedPoolIndex, setSelectedPoolIndex] = useState<number>(-1)
-  const [receipts, setReceipts] = useState<UserLPReceipt[]>([])
-  const [allReceipts, setAllReceipts] = useState<any[]>([])
-  const [selectedReceiptId, setSelectedReceiptId] = useState('')
+  const [lpCoins, setLpCoins] = useState<UserLPCoin[]>([])
+  const [selectedCoinId, setSelectedCoinId] = useState('')
+  const [withdrawAmount, setWithdrawAmount] = useState('')
   const [loading, setLoading] = useState(false)
-  const [loadingReceipts, setLoadingReceipts] = useState(false)
-  const [showDebug, setShowDebug] = useState(true)
+  const [loadingCoins, setLoadingCoins] = useState(false)
 
   const { mutate: signAndExecute } = useSignAndExecuteTransaction()
   const currentAccount = useCurrentAccount()
@@ -47,10 +45,17 @@ export function WithdrawLiquidity() {
 
         const poolOptions: PoolOption[] = events.data.map((event) => {
           const parsedEvent = event.parsedJson as any
+          let tokenType = parsedEvent.token_type?.name || ''
+
+          // Add 0x prefix if missing
+          if (tokenType && !tokenType.startsWith('0x')) {
+            tokenType = '0x' + tokenType
+          }
+
           return {
             id: parsedEvent.pool_id,
             name: parsedEvent.pool_name || 'Unknown Pool',
-            tokenType: parsedEvent.token_type?.name || '',
+            tokenType,
           }
         })
 
@@ -65,101 +70,89 @@ export function WithdrawLiquidity() {
     fetchPools()
   }, [])
 
-  // Fetch user's LP receipts
-  const fetchReceipts = async () => {
+  // Fetch user's LP coins for selected pool
+  const fetchLpCoins = async () => {
     if (!currentAccount?.address || !selectedPool) {
-      setReceipts([])
-      setAllReceipts([])
-      setSelectedReceiptId('')
+      setLpCoins([])
+      setSelectedCoinId('')
       return
     }
 
-    setLoadingReceipts(true)
+    setLoadingCoins(true)
     try {
-      console.log('Fetching LP receipts for address:', currentAccount.address)
-      console.log('PACKAGE_ID:', PACKAGE_ID)
-      console.log('Looking for type:', `${PACKAGE_ID}::tradepool::LPReceipt`)
+      const normalizedTokenType = selectedPool.tokenType.replace(/:{3,}/g, '::')
+      const lpCoinType = `0x2::coin::Coin<${PACKAGE_ID}::tradepool::LPToken<${normalizedTokenType}>>`
 
-      // Get all objects owned by the user
+      console.log('Fetching LP coins for address:', currentAccount.address)
+      console.log('LP Coin Type:', lpCoinType)
+
+      // Get all coins owned by the user
       const ownedObjects = await client.getOwnedObjects({
         owner: currentAccount.address,
-        filter: {
-          StructType: `${PACKAGE_ID}::tradepool::LPReceipt`,
-        },
         options: {
           showContent: true,
           showType: true,
         },
       })
 
-        console.log('All LP receipts found:', ownedObjects.data.length)
+      console.log('Total objects found:', ownedObjects.data.length)
+      console.log('Looking for LP token type:', `${PACKAGE_ID}::tradepool::LPToken<${normalizedTokenType}>`)
 
-        // Store all receipts for debugging display
-        const allReceiptsData = ownedObjects.data.map((obj) => {
+      // Filter for LP coins of this specific token type
+      const poolLpCoins: UserLPCoin[] = ownedObjects.data
+        .filter((obj) => {
+          const objType = obj.data?.type
+          if (!objType) return false
+
+          // Check if it's a Coin type with exact LP token type match
+          if (typeof objType === 'string') {
+            const isMatch = objType.includes(`${PACKAGE_ID}::tradepool::LPToken<${normalizedTokenType}>`)
+            if (objType.includes('LPToken')) {
+              console.log('LP Token found:', objType)
+              console.log('Expected type:', `${PACKAGE_ID}::tradepool::LPToken<${normalizedTokenType}>`)
+              console.log('Match:', isMatch)
+            }
+            return isMatch
+          } else if ('type' in objType) {
+            return (objType as any).type?.includes(`${PACKAGE_ID}::tradepool::LPToken<${normalizedTokenType}>`)
+          }
+          return false
+        })
+        .map((obj) => {
           const content = obj.data?.content
           if (content && 'fields' in content) {
             const fields = content.fields as any
             return {
-              id: obj.data?.objectId,
-              pool_id: fields.pool_id,
-              shares: fields.shares,
-              token_type: fields.token_type
+              id: obj.data?.objectId || '',
+              balance: fields.balance || '0',
+              coinType: selectedPool.tokenType,
             }
           }
           return null
-        }).filter(r => r !== null)
-
-        setAllReceipts(allReceiptsData)
-
-        // Log all receipts for debugging
-        allReceiptsData.forEach((receipt, idx) => {
-          console.log(`Receipt ${idx}:`, receipt)
         })
+        .filter((coin): coin is UserLPCoin => coin !== null)
 
-        // Filter receipts for the selected pool
-        const poolReceipts: UserLPReceipt[] = ownedObjects.data
-          .filter((obj) => {
-            const content = obj.data?.content
-            if (content && 'fields' in content) {
-              const fields = content.fields as any
-              console.log(`Comparing pool_id: ${fields.pool_id} with selected: ${selectedPool.id}`)
-              return fields.pool_id === selectedPool.id
-            }
-            return false
-          })
-          .map((obj) => {
-            const content = obj.data?.content
-            const fields = (content as any).fields
-            return {
-              id: obj.data?.objectId || '',
-              poolId: fields.pool_id,
-              shares: fields.shares,
-              tokenType: fields.token_type?.fields?.name || selectedPool.tokenType,
-            }
-          })
+      console.log(`Found ${poolLpCoins.length} LP coins for pool ${selectedPool.name}`)
+      setLpCoins(poolLpCoins)
 
-        console.log(`Found ${poolReceipts.length} receipts for pool ${selectedPool.name}`)
-        setReceipts(poolReceipts)
-
-        // Auto-select first receipt if available
-        if (poolReceipts.length > 0) {
-          setSelectedReceiptId(poolReceipts[0].id)
-        } else {
-          setSelectedReceiptId('')
-        }
-      } catch (error) {
-        console.error('Error fetching receipts:', error)
-        alert('Error fetching receipts: ' + (error as Error).message)
-        setReceipts([])
-        setAllReceipts([])
-      } finally {
-        setLoadingReceipts(false)
+      // Auto-select first coin if available
+      if (poolLpCoins.length > 0) {
+        setSelectedCoinId(poolLpCoins[0].id)
+      } else {
+        setSelectedCoinId('')
       }
+    } catch (error) {
+      console.error('Error fetching LP coins:', error)
+      alert('Error fetching LP coins: ' + (error as Error).message)
+      setLpCoins([])
+    } finally {
+      setLoadingCoins(false)
     }
+  }
 
-  // Fetch receipts when account or pool changes
+  // Fetch LP coins when account or pool changes
   useEffect(() => {
-    fetchReceipts()
+    fetchLpCoins()
   }, [currentAccount?.address, selectedPool])
 
   const handleWithdraw = async () => {
@@ -168,10 +161,31 @@ export function WithdrawLiquidity() {
       return
     }
 
-    if (!selectedPool || !selectedReceiptId) {
-      alert('Please select a pool and LP receipt')
+    if (!selectedPool || !selectedCoinId) {
+      alert('Please select a pool and LP coin')
       return
     }
+
+    const selectedCoin = lpCoins.find(c => c.id === selectedCoinId)
+    if (!selectedCoin) {
+      alert('Selected coin not found')
+      return
+    }
+
+    if (!withdrawAmount) {
+      alert('Please enter withdrawal amount')
+      return
+    }
+
+    const withdrawAmountMist = Math.floor(parseFloat(withdrawAmount) * 1e9).toString()
+
+    if (BigInt(withdrawAmountMist) > BigInt(selectedCoin.balance)) {
+      alert('Withdrawal amount exceeds your LP balance')
+      return
+    }
+
+    // Auto-detect if withdrawing all
+    const isWithdrawingAll = withdrawAmountMist === selectedCoin.balance
 
     setLoading(true)
 
@@ -181,12 +195,23 @@ export function WithdrawLiquidity() {
       // Normalize token type: replace multiple colons with double colons
       const normalizedTokenType = selectedPool.tokenType.replace(/:{3,}/g, '::')
 
+      let lpCoinToWithdraw
+
+      if (isWithdrawingAll) {
+        // Use the entire coin
+        lpCoinToWithdraw = tx.object(selectedCoinId)
+      } else {
+        // Split the coin to get the partial amount
+        const [splitCoin] = tx.splitCoins(tx.object(selectedCoinId), [tx.pure.u64(withdrawAmountMist)])
+        lpCoinToWithdraw = splitCoin
+      }
+
       // Call withdraw function - it returns (Coin<SUI>, Coin<TOKEN>)
       const [suiCoin, tokenCoin] = tx.moveCall({
         target: `${PACKAGE_ID}::tradepool::withdraw`,
         arguments: [
           tx.object(selectedPool.id),
-          tx.object(selectedReceiptId),
+          lpCoinToWithdraw,
         ],
         typeArguments: [normalizedTokenType],
       })
@@ -201,10 +226,11 @@ export function WithdrawLiquidity() {
         {
           onSuccess: (result) => {
             console.log('Withdrawal successful:', result)
-            alert('Withdrawal successful! You received SUI and tokens.')
-            setSelectedReceiptId('')
-            // Refresh receipts after successful withdrawal
-            fetchReceipts()
+            alert(`Withdrawal successful! Burned ${withdrawAmount} LP tokens. You received SUI and tokens.`)
+            setSelectedCoinId('')
+            setWithdrawAmount('')
+            // Refresh LP coins after successful withdrawal
+            fetchLpCoins()
           },
           onError: (error) => {
             console.error('Error withdrawing:', error)
@@ -220,10 +246,13 @@ export function WithdrawLiquidity() {
     }
   }
 
+  const selectedCoin = lpCoins.find(c => c.id === selectedCoinId)
+
   return (
     <div className="space-y-4">
+      {/* Pool Selection */}
       <div>
-        <label className="label">Select Pool</label>
+        <label className="label">Pool</label>
         <select
           className="input"
           value={selectedPoolIndex}
@@ -237,174 +266,100 @@ export function WithdrawLiquidity() {
             </option>
           ))}
         </select>
-        {loadingPools && <p className="text-xs text-gray-400 mt-1">Loading pools...</p>}
-        {pools.length === 0 && !loadingPools && (
-          <p className="text-xs text-yellow-400 mt-1">No pools found. Create a pool first!</p>
-        )}
       </div>
 
       {selectedPool && (
         <>
-          <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-400 mb-1">Pool</p>
-                <p className="font-semibold text-white">{selectedPool.name}</p>
-                <p className="text-xs text-gray-400 mt-2 break-all">Pool ID: {selectedPool.id}</p>
-              </div>
-              <button
-                onClick={fetchReceipts}
-                disabled={loadingReceipts}
-                className="btn btn-primary text-xs px-3 py-1"
-              >
-                {loadingReceipts ? 'Loading...' : 'Refresh'}
-              </button>
-            </div>
-          </div>
-
-          {/* Debug section */}
-          {showDebug && allReceipts.length > 0 && (
-            <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-blue-400 text-sm font-semibold">
-                  🐛 Debug: All LP Receipts ({allReceipts.length} found)
-                </p>
-                <button
-                  onClick={() => setShowDebug(false)}
-                  className="text-xs text-gray-400 hover:text-white"
-                >
-                  Hide
-                </button>
-              </div>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {allReceipts.map((receipt: any, idx) => (
-                  <div key={idx} className="bg-gray-900 p-2 rounded text-xs">
-                    <p className="text-white">Receipt {idx + 1}:</p>
-                    <p className="text-gray-400 font-mono break-all">ID: {receipt.id}</p>
-                    <p className="text-gray-400 font-mono break-all">Pool: {receipt.pool_id}</p>
-                    <p className="text-green-400">Shares: {receipt.shares}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {loadingReceipts ? (
-            <div className="text-center py-4 text-gray-400">
-              Loading your LP positions...
-            </div>
-          ) : receipts.length === 0 ? (
+          {loadingCoins ? (
+            <div className="text-center py-4 text-gray-400">Loading LP tokens...</div>
+          ) : lpCoins.length === 0 ? (
             <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
-              <p className="text-yellow-400 text-sm font-semibold mb-2">
-                ⚠️ No LP positions found for this pool
+              <p className="text-yellow-400 text-sm font-semibold">No LP tokens found for "{selectedPool.name}"</p>
+              <p className="text-xs text-gray-400 mt-2">
+                You don't have any LP tokens for this specific pool. Deposit liquidity to this pool first.
               </p>
-              {allReceipts.length === 0 ? (
-                <>
-                  <p className="text-xs text-gray-400 mb-2">
-                    No LP receipts found in your wallet at all.
-                  </p>
-                  <p className="text-xs text-gray-400 mb-2">
-                    Possible reasons:
-                  </p>
-                  <ul className="text-xs text-gray-400 list-disc list-inside space-y-1 mb-3">
-                    <li>You haven't deposited liquidity yet</li>
-                    <li>Deposit transaction failed</li>
-                    <li>Wrong PACKAGE_ID in .env file</li>
-                  </ul>
-                </>
-              ) : (
-                <>
-                  <p className="text-xs text-gray-400 mb-2">
-                    Found {allReceipts.length} LP receipt(s), but none match this pool.
-                  </p>
-                  <p className="text-xs text-gray-400 mb-2">
-                    Check the debug section above to see all your receipts.
-                  </p>
-                </>
-              )}
-              {currentAccount && (
-                <a
-                  href={`https://suiscan.xyz/testnet/account/${currentAccount.address}/objects`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-400 hover:text-blue-300 underline"
-                >
-                  View your objects on Sui Explorer →
-                </a>
-              )}
+              <p className="text-xs text-gray-500 mt-3 font-mono">
+                Looking for: LPToken&lt;{selectedPool.tokenType.split('::').slice(-2).join('::')}...&gt;
+              </p>
             </div>
           ) : (
-            <div>
-              <label className="label">Your LP Positions</label>
-              <div className="space-y-2">
-                {receipts.map((receipt) => (
-                  <div
-                    key={receipt.id}
-                    className={`bg-gray-900 rounded-lg p-3 border cursor-pointer transition-colors ${
-                      selectedReceiptId === receipt.id
-                        ? 'border-blue-500 bg-blue-900/20'
-                        : 'border-gray-700 hover:border-gray-600'
-                    }`}
-                    onClick={() => setSelectedReceiptId(receipt.id)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <p className="text-sm text-white font-semibold">
-                          {Number(receipt.shares).toLocaleString()} shares
-                        </p>
-                        <p className="font-mono text-xs text-gray-400 mt-1 break-all">
-                          {receipt.id.slice(0, 20)}...{receipt.id.slice(-6)}
-                        </p>
-                      </div>
-                      <div className="ml-2">
-                        <input
-                          type="radio"
-                          checked={selectedReceiptId === receipt.id}
-                          onChange={() => setSelectedReceiptId(receipt.id)}
-                          className="w-4 h-4"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+            <>
+              {/* LP Token Selection */}
+              <div>
+                <label className="label">Your LP Tokens ({selectedPool.name})</label>
+                <select
+                  className="input"
+                  value={selectedCoinId}
+                  onChange={(e) => setSelectedCoinId(e.target.value)}
+                >
+                  <option value="">-- Select LP token --</option>
+                  {lpCoins.map((coin) => (
+                    <option key={coin.id} value={coin.id}>
+                      {(Number(coin.balance) / 1e9).toFixed(4)} LP
+                    </option>
+                  ))}
+                </select>
+                {selectedCoin && (
+                  <p className="text-xs text-gray-400 mt-1 font-mono break-all">
+                    {selectedCoin.id}
+                  </p>
+                )}
+                <p className="text-xs text-blue-400 mt-2">
+                  💡 Only LP tokens from this specific pool are shown
+                </p>
               </div>
-            </div>
+
+              {/* Amount Input */}
+              {selectedCoinId && (
+                <div>
+                  <label className="label">Amount to Withdraw</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.0001"
+                      className="input pr-16"
+                      placeholder="0.0"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded"
+                      onClick={() => {
+                        if (selectedCoin) {
+                          setWithdrawAmount((Number(selectedCoin.balance) / 1e9).toString())
+                        }
+                      }}
+                    >
+                      MAX
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Available: {selectedCoin ? (Number(selectedCoin.balance) / 1e9).toFixed(4) : '0'} LP
+                  </p>
+                </div>
+              )}
+            </>
           )}
         </>
       )}
 
-      {!currentAccount ? (
-        <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
-          <p className="text-yellow-400 text-sm">
-            Please connect your wallet to view and withdraw your LP positions
-          </p>
-        </div>
-      ) : (
-        <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-3">
-          <p className="text-xs text-gray-400 mb-1">Configuration</p>
-          <p className="text-xs font-mono text-gray-300 break-all">
-            Package: {PACKAGE_ID === '0x0' ? '⚠️ NOT SET' : PACKAGE_ID}
-          </p>
-          {currentAccount && (
-            <p className="text-xs font-mono text-gray-300 break-all mt-1">
-              Wallet: {currentAccount.address}
-            </p>
-          )}
-        </div>
-      )}
-
+      {/* Withdraw Button */}
       <button
         className="btn btn-danger w-full"
         onClick={handleWithdraw}
-        disabled={loading || !selectedPool || !selectedReceiptId || !currentAccount}
+        disabled={loading || !selectedPool || !selectedCoinId || !currentAccount || !withdrawAmount}
       >
-        {loading ? 'Withdrawing...' : 'Withdraw Liquidity'}
+        {loading ? 'Withdrawing...' : `Withdraw ${withdrawAmount || '0'} LP`}
       </button>
 
-      {selectedReceiptId && (
-        <p className="text-xs text-gray-500">
-          ⚠️ This will burn your LP receipt and withdraw your liquidity
-        </p>
+      {/* Info */}
+      {selectedCoinId && withdrawAmount && (
+        <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
+          <p className="text-xs text-blue-300">
+            💡 Burns <strong>{withdrawAmount}</strong> LP tokens and returns proportional SUI + tokens
+          </p>
+        </div>
       )}
     </div>
   )
