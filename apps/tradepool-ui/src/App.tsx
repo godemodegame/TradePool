@@ -22,8 +22,8 @@ function App() {
             <div className="flex items-center gap-3">
               {/* Logo with glow effect */}
               <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-xl blur-md opacity-50"></div>
-                <div className="relative w-12 h-12 bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-emerald-600 rounded-xl blur-md opacity-50"></div>
+                <div className="relative w-12 h-12 bg-gradient-to-br from-cyan-500 via-teal-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                   </svg>
@@ -49,8 +49,8 @@ function App() {
               {/* Logo with enhanced glow */}
               <div className="flex justify-center mb-8">
                 <div className="relative">
-                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-purple-600 rounded-3xl blur-2xl opacity-50 animate-pulse-slow"></div>
-                  <div className="relative w-20 h-20 bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-600 rounded-3xl flex items-center justify-center shadow-2xl">
+                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-emerald-600 rounded-3xl blur-2xl opacity-50 animate-pulse-slow"></div>
+                  <div className="relative w-20 h-20 bg-gradient-to-br from-cyan-500 via-teal-500 to-emerald-600 rounded-3xl flex items-center justify-center shadow-2xl">
                     <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                     </svg>
