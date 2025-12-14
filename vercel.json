@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd apps/tradepool-ui && npm install && npm run build",
+  "outputDirectory": "apps/tradepool-ui/dist",
+  "installCommand": "npm install --prefix apps/tradepool-ui",
+  "framework": null,
+  "devCommand": "cd apps/tradepool-ui && npm run dev"
+}

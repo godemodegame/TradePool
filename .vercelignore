@@ -1,0 +1,26 @@
+# Move smart contract files
+sources/
+tests/
+build/
+Move.toml
+Move.lock
+
+# Node modules
+node_modules/
+apps/*/node_modules/
+
+# Build outputs (except the one we deploy)
+apps/tradepool-ui/dist/
+
+# Git
+.git/
+.gitignore
+
+# Temporary files
+tmp/
+*.log
+.DS_Store
+
+# Scripts
+scripts/
+*.sh
